@@ -2,6 +2,7 @@
 
 if(YP_CLANG_TIDY)
   find_program(YP_CLANG_TIDY_EXE NAMES clang-tidy HINTS "$ENV{ProgramFiles}/LLVM/bin" "C:/Program Files/LLVM/bin" REQUIRED)
+  message(STATUS "clang-tidy: ${YP_CLANG_TIDY_EXE}")
   # AUTOMOC output lives in the build tree; this config switches clang-tidy off for it.
   file(WRITE "${CMAKE_BINARY_DIR}/.clang-tidy" "Checks: '-*,misc-definitions-in-headers'\n")
 endif()
