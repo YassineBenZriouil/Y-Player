@@ -1,0 +1,4 @@
+* text=auto
+# cmd.exe mis-parses labels/goto in LF batch files
+*.cmd text eol=crlf
+*.bat text eol=crlf

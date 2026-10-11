@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/cache@v4
+        with:
+          path: deps
+          key: deps-${{ hashFiles('scripts/fetch_deps.py') }}
+      # Same entry point as local CI: Release + clang-tidy + tests.
+      - name: Build and test
+        shell: cmd
+        run: scripts\build.cmd ci

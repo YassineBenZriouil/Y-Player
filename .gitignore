@@ -1,0 +1,6 @@
+/build/
+/deps/
+spikes/*/build/
+aqtinstall.log
+*.user
+.vs/
