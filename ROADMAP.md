@@ -18,7 +18,7 @@ The full phase plan lives in [`context/PHASES.md`](context/PHASES.md). This file
 ## Phase 1 exit criteria
 
 - [x] A fresh clone plus `scripts\build.cmd` produces a running empty window. Verified by building a copy of the tracked files in a clean folder: dependencies downloaded from scratch, the build passed, and the window opened and closed with exit code 0.
-- [x] CI green with at least one unit test. `scripts\build.cmd ci` passes: Release, clang-tidy, and 3 Qt Test suites (logging, libmpv DLL/header match, system info). The GitHub Actions workflow (`.github/workflows/ci.yml`) runs the same command. It has **not** run on GitHub yet because the repo has no remote.
+- [x] CI green with at least one unit test. `scripts\build.cmd ci` passes: Release, clang-tidy, and 3 Qt Test suites (logging, libmpv DLL/header match, system info). The GitHub Actions workflow (`.github/workflows/ci.yml`) runs the same command and passes on GitHub: [run 38175743454](https://github.com/YassineBenZriouil/Y-Player/actions/runs/38175743454).
 - [x] No warnings. `/W4 /WX` applies to every target, and clang-tidy warnings are errors in `ci`.
 
 ## Phase 0 deliverables
@@ -31,4 +31,3 @@ The full phase plan lives in [`context/PHASES.md`](context/PHASES.md). This file
 ## Carried into Phase 2
 
 - Implement `MpvEngine : yp::IPlaybackEngine` in `engine/mpv/`, and turn the central widget into the native video surface.
-- First GitHub Actions run, once a remote exists.
