@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 project(YPlayer VERSION 0.1.0 DESCRIPTION "High-performance Windows video player" LANGUAGES CXX)
 
 if(NOT MSVC)
-  message(FATAL_ERROR "Y-Player builds with MSVC only (DECISIONS.md ADR-004)")
+  message(FATAL_ERROR "Y-Player builds with MSVC only (context/DECISIONS.md ADR-004)")
 endif()
 
 option(YP_BUILD_TESTS "Build unit tests" ON)

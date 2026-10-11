@@ -1,6 +1,6 @@
 # Y-Player
 
-A high-performance Windows video player built on libmpv and Qt 6. Goals and constraints are in [`context/INIT.md`](context/INIT.md), the phase plan is in [`context/PHASES.md`](context/PHASES.md), and progress is in [`ROADMAP.md`](ROADMAP.md).
+A high-performance Windows video player built on libmpv and Qt 6. Goals and constraints are in [`context/INIT.md`](context/INIT.md), the phase plan is in [`context/PHASES.md`](context/PHASES.md), and progress is in [`context/ROADMAP.md`](context/ROADMAP.md).
 
 **Status:** Phase 1 is complete. The app opens an empty player window, and there is no playback yet (that's Phase 2).
 
@@ -50,11 +50,11 @@ bench/          benchmark runner (Phase 3)
 cmake/          shared CMake modules
 scripts/        build.cmd, fetch_deps.py
 spikes/         throwaway experiments (not part of the product build)
-context/        project brief and phase plan
+context/        project docs: brief, phase plan, architecture, decisions, licenses, roadmap
 deps/           fetched dependencies (gitignored)
 ```
 
-The module boundaries are described in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+The module boundaries are described in [`context/ARCHITECTURE.md`](context/ARCHITECTURE.md).
 
 **Logs:** `%LOCALAPPDATA%\Y-Player\logs\y-player.log`. For debug output in a release build, set `QT_LOGGING_RULES=yp.*.debug=true`.
 
@@ -77,7 +77,7 @@ The module boundaries are described in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Docs
 
-- [`ARCHITECTURE.md`](ARCHITECTURE.md): modules, boundaries, threading, logging
-- [`DECISIONS.md`](DECISIONS.md): architecture decision records
-- [`LICENSES.md`](LICENSES.md): third-party licensing
-- [`ROADMAP.md`](ROADMAP.md): phase status
+- [`context/ARCHITECTURE.md`](context/ARCHITECTURE.md): modules, boundaries, threading, logging
+- [`context/DECISIONS.md`](context/DECISIONS.md): architecture decision records
+- [`context/LICENSES.md`](context/LICENSES.md): third-party licensing
+- [`context/ROADMAP.md`](context/ROADMAP.md): phase status

@@ -1,6 +1,6 @@
 # Roadmap
 
-The full phase plan lives in [`context/PHASES.md`](context/PHASES.md). This file tracks status.
+The full phase plan lives in [`PHASES.md`](PHASES.md). This file tracks status.
 
 | # | Phase | Status |
 |---|-------|--------|
@@ -23,10 +23,10 @@ The full phase plan lives in [`context/PHASES.md`](context/PHASES.md). This file
 
 ## Phase 0 deliverables
 
-- Toolchain installed, with versions recorded in [`README.md`](README.md)
+- Toolchain installed, with versions recorded in [`README.md`](../README.md)
 - ADRs in [`DECISIONS.md`](DECISIONS.md)
 - Licensing notes in [`LICENSES.md`](LICENSES.md)
-- libmpv embedding spike in [`spikes/mpv-embed/`](spikes/mpv-embed/) (`run_matrix.sh` → `results.jsonl`), with results in `DECISIONS.md` (ADR-003)
+- libmpv embedding spike in [`spikes/mpv-embed/`](../spikes/mpv-embed/) (`run_matrix.sh` → `results.jsonl`), with results in `DECISIONS.md` (ADR-003)
 
 ## Carried into Phase 2
 
