@@ -1,15 +1,19 @@
 #include "engine/mpv/MpvEngine.h"
 
+#include "core/Adjustments.h"
 #include "core/TimeFormat.h"
 
 #include <QFileInfo>
 #include <QLoggingCategory>
+#include <QVariant>
 
 #include <mpv/client.h>
 
 #include <algorithm>
 #include <cmath>
+#include <thread>
 #include <utility>
+#include <vector>
 
 Q_LOGGING_CATEGORY(lcMpv, "yp.mpv")
 
@@ -31,6 +35,14 @@ enum Property : quint64 {
     Hwdec,
     Title,
     Path,
+    Speed,
+    AudioDelayProp,
+    SubDelay,
+    TrackList,
+    ChapterList,
+    ChapterProp,
+    AudioDeviceList,
+    AudioDeviceProp,
 };
 
 struct Observed {
@@ -54,6 +66,14 @@ constexpr Observed kObserved[] = {
     {Hwdec, "hwdec-current", MPV_FORMAT_STRING},
     {Title, "media-title", MPV_FORMAT_STRING},
     {Path, "path", MPV_FORMAT_STRING},
+    {Speed, "speed", MPV_FORMAT_DOUBLE},
+    {AudioDelayProp, "audio-delay", MPV_FORMAT_DOUBLE},
+    {SubDelay, "sub-delay", MPV_FORMAT_DOUBLE},
+    {TrackList, "track-list", MPV_FORMAT_NODE},
+    {ChapterList, "chapter-list", MPV_FORMAT_NODE},
+    {ChapterProp, "chapter", MPV_FORMAT_INT64},
+    {AudioDeviceList, "audio-device-list", MPV_FORMAT_NODE},
+    {AudioDeviceProp, "audio-device", MPV_FORMAT_STRING},
 };
 
 // ADR-006: mpv must not read config, run scripts, or act on its own input/drops.
@@ -76,13 +96,53 @@ constexpr std::pair<const char*, const char*> kOptions[] = {
     {"keep-open", "yes"},     // hold the last frame at EOF instead of unloading
     {"volume-max", "100"},
     {"audio-client-name", "Y-Player"},
+    {"screenshot-format", "png"},
+    {"osd-font", "Segoe UI"},
 };
 
 constexpr double kPositionStep = 0.1;  // seconds; throttles positionChanged during playback
 
+QVariant toVariant(const mpv_node& node) {
+    switch (node.format) {
+        case MPV_FORMAT_STRING: return QString::fromUtf8(node.u.string);
+        case MPV_FORMAT_FLAG: return node.u.flag != 0;
+        case MPV_FORMAT_INT64: return static_cast<qlonglong>(node.u.int64);
+        case MPV_FORMAT_DOUBLE: return node.u.double_;
+        case MPV_FORMAT_NODE_ARRAY: {
+            QVariantList list;
+            for (int i = 0; i < node.u.list->num; ++i) list.append(toVariant(node.u.list->values[i]));
+            return list;
+        }
+        case MPV_FORMAT_NODE_MAP: {
+            QVariantMap map;
+            for (int i = 0; i < node.u.list->num; ++i) {
+                map.insert(QString::fromUtf8(node.u.list->keys[i]), toVariant(node.u.list->values[i]));
+            }
+            return map;
+        }
+        default: return {};
+    }
+}
+
+TrackType trackType(const QString& mpvType) {
+    if (mpvType == QLatin1String("audio")) return TrackType::Audio;
+    if (mpvType == QLatin1String("sub")) return TrackType::Subtitle;
+    return TrackType::Video;
+}
+
+const char* trackProperty(TrackType type) {
+    switch (type) {
+        case TrackType::Audio: return "aid";
+        case TrackType::Subtitle: return "sid";
+        case TrackType::Video: break;
+    }
+    return "vid";
+}
+
 }  // namespace
 
-MpvEngine::MpvEngine(QObject* parent) : IPlaybackEngine(parent), mpv_(mpv_create()) {
+MpvEngine::MpvEngine(QObject* parent) : IPlaybackEngine(parent) {
+    mpv_ = mpv_create();
     if (mpv_ == nullptr) {
         qCCritical(lcMpv) << "mpv_create failed";
         return;
@@ -109,7 +169,11 @@ MpvEngine::MpvEngine(QObject* parent) : IPlaybackEngine(parent), mpv_(mpv_create
 MpvEngine::~MpvEngine() {
     if (mpv_ == nullptr) return;
     mpv_set_wakeup_callback(mpv_, nullptr, nullptr);  // no callback runs after this returns
-    mpv_terminate_destroy(mpv_);  // joins mpv's threads; queued drains die with this QObject
+    // mpv's teardown calls unmatched CoUninitialize() on its calling thread (measured, ADR-011).
+    // On the UI thread that destroys Qt's OLE apartment and ~QApplication later crashes in
+    // Windows.UI.dll. Run it on a throwaway thread instead -- still synchronous, so the video
+    // window outlives mpv. Regression test: tst_mpvengine::teardownIsFastAndKeepsComApartment.
+    std::thread([handle = mpv_] { mpv_terminate_destroy(handle); }).join();
 }
 
 bool MpvEngine::attachVideoOutput(quintptr nativeWindow) {
@@ -126,16 +190,46 @@ bool MpvEngine::attachVideoOutput(quintptr nativeWindow) {
 
 bool MpvEngine::ready() const { return mpv_ != nullptr && initialized_; }
 
-void MpvEngine::open(const QString& path) {
+void MpvEngine::command(std::initializer_list<QByteArray> args, quint64 replyId) {
+    std::vector<const char*> argv;
+    argv.reserve(args.size() + 1);
+    for (const QByteArray& a : args) argv.push_back(a.constData());
+    argv.push_back(nullptr);
+    mpv_command_async(mpv_, replyId, argv.data());  // mpv copies the arguments
+}
+
+void MpvEngine::setString(const char* name, const QByteArray& value) {
+    const char* data = value.constData();
+    mpv_set_property_async(mpv_, 0, name, MPV_FORMAT_STRING, static_cast<void*>(&data));
+}
+
+void MpvEngine::setDouble(const char* name, double value) {
+    mpv_set_property_async(mpv_, 0, name, MPV_FORMAT_DOUBLE, &value);
+}
+
+void MpvEngine::setPause(bool paused) {
+    int flag = paused ? 1 : 0;
+    mpv_set_property_async(mpv_, 0, "pause", MPV_FORMAT_FLAG, &flag);
+}
+
+quint64 MpvEngine::track(Request kind, const QString& path) {
+    const quint64 id = nextReplyId_++;
+    pending_.insert(id, {kind, path});
+    return id;
+}
+
+void MpvEngine::open(const QString& path, double startSeconds) {
     lastPath_ = path;
     if (!ready()) {
         fail(tr("the playback engine is not available"));
         return;
     }
     setPause(false);  // mpv's pause flag persists across files; a new file should play
-    const QByteArray utf8 = path.toUtf8();
-    const char* cmd[] = {"loadfile", utf8.constData(), "replace", nullptr};
-    mpv_command_async(mpv_, 0, cmd);
+    if (startSeconds > 0.0) {
+        command({"loadfile", path.toUtf8(), "replace", "-1", "start=" + QByteArray::number(startSeconds, 'f', 3)});
+    } else {
+        command({"loadfile", path.toUtf8(), "replace"});
+    }
 }
 
 void MpvEngine::play() {
@@ -153,23 +247,33 @@ void MpvEngine::pause() {
 }
 
 void MpvEngine::stop() {
-    if (!ready()) return;
-    const char* cmd[] = {"stop", nullptr};
-    mpv_command_async(mpv_, 0, cmd);
+    if (ready()) command({"stop"});
 }
 
 void MpvEngine::seek(double seconds, SeekMode mode) {
     if (!ready() || state_ == PlaybackState::Idle || state_ == PlaybackState::Error) return;
     const QByteArray target = QByteArray::number(clampSeekTarget(seconds, duration_), 'f', 3);
-    const char* cmd[] = {"seek", target.constData(), mode == SeekMode::Exact ? "absolute+exact" : "absolute+keyframes",
-                         nullptr};
-    mpv_command_async(mpv_, 0, cmd);
+    const QByteArray flags = mode == SeekMode::Exact ? "absolute+exact" : "absolute+keyframes";
+    qCDebug(lcMpv) << "seek" << target << flags;
+    command({"seek", target, flags});
+}
+
+void MpvEngine::frameStep(bool backward) {
+    if (ready()) command({backward ? "frame-back-step" : "frame-step"});
+}
+
+void MpvEngine::setSpeed(double speed) {
+    if (ready()) setDouble("speed", clampSpeed(speed));
+}
+
+void MpvEngine::setAbLoop(double a, double b) {
+    if (!ready()) return;
+    setString("ab-loop-a", a >= 0.0 ? QByteArray::number(a, 'f', 3) : QByteArray("no"));
+    setString("ab-loop-b", b >= 0.0 ? QByteArray::number(b, 'f', 3) : QByteArray("no"));
 }
 
 void MpvEngine::setVolume(int percent) {
-    if (!ready()) return;
-    double v = std::clamp(percent, 0, 100);
-    mpv_set_property_async(mpv_, 0, "volume", MPV_FORMAT_DOUBLE, &v);
+    if (ready()) setDouble("volume", std::clamp(percent, 0, 100));
 }
 
 void MpvEngine::setMuted(bool muted) {
@@ -178,9 +282,96 @@ void MpvEngine::setMuted(bool muted) {
     mpv_set_property_async(mpv_, 0, "mute", MPV_FORMAT_FLAG, &flag);
 }
 
-void MpvEngine::setPause(bool paused) {
-    int flag = paused ? 1 : 0;
-    mpv_set_property_async(mpv_, 0, "pause", MPV_FORMAT_FLAG, &flag);
+void MpvEngine::setAudioDelay(double seconds) {
+    if (ready()) setDouble("audio-delay", stepDelay(seconds, 0.0));
+}
+
+void MpvEngine::setAudioDevice(const QString& name) {
+    if (ready()) setString("audio-device", name.isEmpty() ? QByteArray("auto") : name.toUtf8());
+}
+
+void MpvEngine::setAudioChannels(const QString& layout) {
+    if (ready()) setString("audio-channels", layout == QLatin1String("auto") ? QByteArray("auto-safe") : layout.toUtf8());
+}
+
+void MpvEngine::selectTrack(TrackType type, int id) {
+    if (ready()) setString(trackProperty(type), id > 0 ? QByteArray::number(id) : QByteArray("no"));
+}
+
+void MpvEngine::addSubtitleFile(const QString& path) {
+    if (ready()) command({"sub-add", path.toUtf8(), "select"}, track(Request::SubtitleFile, path));
+}
+
+void MpvEngine::setSubtitleDelay(double seconds) {
+    if (ready()) setDouble("sub-delay", stepDelay(seconds, 0.0));
+}
+
+void MpvEngine::setSubtitleStyle(const SubtitleStyle& style) {
+    if (!ready()) return;
+    setString("sub-font", style.font.toUtf8());
+    setString("sub-font-size", QByteArray::number(std::clamp(style.size, 8, 200)));
+    setString("sub-color", style.color.toUtf8());
+    setString("sub-outline-color", style.outlineColor.toUtf8());
+    setDouble("sub-outline-size", std::clamp(style.outlineSize, 0.0, 20.0));
+    setString("sub-pos", QByteArray::number(std::clamp(style.position, 0, 150)));
+    setString("sub-ass-override", style.overrideStyled ? "force" : "scale");
+}
+
+void MpvEngine::setAspectOverride(double ratio) {
+    if (ready()) setString("video-aspect-override", ratio > 0.0 ? QByteArray::number(ratio, 'f', 6) : QByteArray("-1"));
+}
+
+void MpvEngine::setRotation(int degrees) {
+    if (!ready()) return;
+    const int normalized = ((degrees / 90 * 90) % 360 + 360) % 360;
+    setString("video-rotate", QByteArray::number(normalized));
+}
+
+void MpvEngine::setFlip(bool horizontal, bool vertical) {
+    if (!ready() || (horizontal == flipH_ && vertical == flipV_)) return;
+    flipH_ = horizontal;
+    flipV_ = vertical;
+    QByteArrayList filters;
+    if (horizontal) filters << "hflip";
+    if (vertical) filters << "vflip";
+    setString("vf", filters.join(','));  // we own the whole filter chain
+}
+
+void MpvEngine::seekChapter(int index) {
+    if (!ready() || index < 0 || index >= chapters_.size()) return;
+    setString("chapter", QByteArray::number(index));
+}
+
+void MpvEngine::screenshot(const QString& path, bool withSubtitles) {
+    if (!ready()) return;
+    command({"screenshot-to-file", path.toUtf8(), withSubtitles ? "subtitles" : "video"},
+            track(Request::Screenshot, path));
+}
+
+void MpvEngine::showMessage(const QString& text, int milliseconds) {
+    if (ready()) command({"show-text", text.toUtf8(), QByteArray::number(milliseconds)});
+}
+
+PlaybackStats MpvEngine::stats() const {
+    PlaybackStats s;
+    if (!ready()) return s;
+    const auto getInt = [this](const char* name, qint64& out) {
+        int64_t v = 0;
+        if (mpv_get_property(mpv_, name, MPV_FORMAT_INT64, &v) >= 0) out = v;
+    };
+    const auto getDouble = [this](const char* name, double& out) {
+        double v = 0.0;
+        if (mpv_get_property(mpv_, name, MPV_FORMAT_DOUBLE, &v) >= 0) out = v;
+    };
+    getInt("frame-drop-count", s.droppedFrames);
+    getInt("decoder-frame-drop-count", s.decoderDroppedFrames);
+    getInt("vo-delayed-frame-count", s.delayedFrames);
+    getInt("mistimed-frame-count", s.mistimedFrames);
+    getDouble("avsync", s.avsync);
+    getDouble("vsync-jitter", s.vsyncJitter);
+    getDouble("display-fps", s.displayFps);
+    getDouble("estimated-vf-fps", s.estimatedVideoFps);
+    return s;
 }
 
 void MpvEngine::drainEvents() {
@@ -204,9 +395,11 @@ void MpvEngine::drainEvents() {
                 qCInfo(lcMpv).noquote() << "loaded" << lastPath_;
                 apply(PlaybackEvent::FileLoaded);
                 break;
-            case MPV_EVENT_PLAYBACK_RESTART:  // a seek finished: report the exact landing spot
+            case MPV_EVENT_PLAYBACK_RESTART:  // first frame after load/seek: report the exact spot
+                qCDebug(lcMpv) << "playback restart at" << position_;
                 lastEmittedPosition_ = position_;
                 Q_EMIT positionChanged(position_);
+                Q_EMIT playbackRestarted();
                 break;
             case MPV_EVENT_END_FILE: {
                 const auto* end = static_cast<const mpv_event_end_file*>(ev->data);
@@ -233,11 +426,7 @@ void MpvEngine::drainEvents() {
                 break;
             }
             case MPV_EVENT_COMMAND_REPLY:
-            case MPV_EVENT_SET_PROPERTY_REPLY:
-                // Expected while nothing is loaded (e.g. a seek during loading); real failures
-                // surface as END_FILE errors.
-                if (ev->error < 0) qCDebug(lcMpv) << "async request failed:" << mpv_error_string(ev->error);
-                break;
+            case MPV_EVENT_SET_PROPERTY_REPLY: handleReply(ev->reply_userdata, ev->error); break;
             default: break;
         }
     }
@@ -252,6 +441,38 @@ void MpvEngine::drainEvents() {
     }
 }
 
+void MpvEngine::handleReply(quint64 id, int error) {
+    if (!pending_.contains(id)) {
+        // Expected while nothing is loaded (e.g. a seek during loading); real playback failures
+        // surface as END_FILE errors.
+        if (error < 0) qCDebug(lcMpv) << "async request failed:" << mpv_error_string(error);
+        return;
+    }
+    const Pending p = pending_.take(id);
+    const QString name = QFileInfo(p.path).fileName();
+    if (p.kind == Request::Screenshot) {
+        if (error < 0) {
+            Q_EMIT errorOccurred(tr("Screenshot failed: %1").arg(QString::fromUtf8(mpv_error_string(error))));
+        } else {
+            Q_EMIT screenshotSaved(p.path);
+        }
+    } else if (error < 0) {
+        Q_EMIT errorOccurred(tr("Cannot load subtitles \"%1\": %2").arg(name, QString::fromUtf8(mpv_error_string(error))));
+    }
+}
+
+void MpvEngine::handleDeviceList(const QList<AudioDevice>& devices) {
+    audioDevices_ = devices;
+    Q_EMIT audioDevicesChanged();
+    if (audioDevice_ == QLatin1String("auto")) return;
+    const bool present = std::ranges::any_of(devices, [&](const AudioDevice& d) { return d.name == audioDevice_; });
+    if (!present) {  // unplugged: fall back to the system default rather than going silent
+        qCWarning(lcMpv).noquote() << "audio device disappeared:" << audioDevice_;
+        setAudioDevice(QStringLiteral("auto"));
+        Q_EMIT notice(tr("Audio device disconnected; switched to the system default."));
+    }
+}
+
 void MpvEngine::handlePropertyChange(const mpv_event_property& prop, quint64 id) {
     const bool has = prop.format != MPV_FORMAT_NONE && prop.data != nullptr;  // NONE: unavailable
     const auto asDouble = [&] { return has ? *static_cast<const double*>(prop.data) : 0.0; };
@@ -260,6 +481,7 @@ void MpvEngine::handlePropertyChange(const mpv_event_property& prop, quint64 id)
     const auto asString = [&] {
         return has ? QString::fromUtf8(*static_cast<char* const*>(prop.data)) : QString();
     };
+    const auto asList = [&] { return has ? toVariant(*static_cast<const mpv_node*>(prop.data)).toList() : QVariantList(); };
 
     switch (static_cast<Property>(id)) {
         case TimePos:
@@ -291,6 +513,61 @@ void MpvEngine::handlePropertyChange(const mpv_event_property& prop, quint64 id)
                 muted_ = asFlag();
                 Q_EMIT mutedChanged(muted_);
             }
+            break;
+        case Speed:
+            if (has) {
+                speed_ = asDouble();
+                Q_EMIT speedChanged(speed_);
+            }
+            break;
+        case AudioDelayProp:
+            audioDelay_ = asDouble();
+            Q_EMIT audioDelayChanged(audioDelay_);
+            break;
+        case SubDelay:
+            subtitleDelay_ = asDouble();
+            Q_EMIT subtitleDelayChanged(subtitleDelay_);
+            break;
+        case TrackList: {
+            tracks_.clear();
+            for (const QVariant& v : asList()) {
+                const QVariantMap m = v.toMap();
+                tracks_.append({.id = m.value(QStringLiteral("id")).toInt(),
+                                .type = trackType(m.value(QStringLiteral("type")).toString()),
+                                .title = m.value(QStringLiteral("title")).toString(),
+                                .language = m.value(QStringLiteral("lang")).toString(),
+                                .codec = m.value(QStringLiteral("codec")).toString(),
+                                .external = m.value(QStringLiteral("external")).toBool(),
+                                .selected = m.value(QStringLiteral("selected")).toBool(),
+                                .isDefault = m.value(QStringLiteral("default")).toBool()});
+            }
+            Q_EMIT tracksChanged();
+            break;
+        }
+        case ChapterList:
+            chapters_.clear();
+            for (const QVariant& v : asList()) {
+                const QVariantMap m = v.toMap();
+                chapters_.append({m.value(QStringLiteral("title")).toString(), m.value(QStringLiteral("time")).toDouble()});
+            }
+            Q_EMIT chaptersChanged();
+            break;
+        case ChapterProp:
+            currentChapter_ = has ? asInt() : -1;
+            Q_EMIT chaptersChanged();
+            break;
+        case AudioDeviceList: {
+            QList<AudioDevice> devices;
+            for (const QVariant& v : asList()) {
+                const QVariantMap m = v.toMap();
+                devices.append({m.value(QStringLiteral("name")).toString(), m.value(QStringLiteral("description")).toString()});
+            }
+            handleDeviceList(devices);
+            break;
+        }
+        case AudioDeviceProp:
+            audioDevice_ = has ? asString() : QStringLiteral("auto");
+            Q_EMIT audioDevicesChanged();
             break;
         case Width: info_.width = asInt(); infoDirty_ = true; break;
         case Height: info_.height = asInt(); infoDirty_ = true; break;

@@ -4,3 +4,4 @@ spikes/*/build/
 aqtinstall.log
 *.user
 .vs/
+/bench/media/

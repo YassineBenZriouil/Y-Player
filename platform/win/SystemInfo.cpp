@@ -40,4 +40,16 @@ SystemInfo querySystemInfo() {
     return info;
 }
 
+qint64 processAgeMs() {
+    FILETIME created{};
+    FILETIME exited{};
+    FILETIME kernel{};
+    FILETIME user{};
+    FILETIME now{};
+    GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user);
+    GetSystemTimePreciseAsFileTime(&now);
+    const auto ticks = [](FILETIME t) { return (static_cast<quint64>(t.dwHighDateTime) << 32U) | t.dwLowDateTime; };
+    return static_cast<qint64>((ticks(now) - ticks(created)) / 10000U);  // 100 ns ticks -> ms
+}
+
 }  // namespace yp::platform

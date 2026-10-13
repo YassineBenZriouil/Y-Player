@@ -2,7 +2,53 @@
 
 A high-performance Windows video player built on libmpv and Qt 6. Goals and constraints are in [`context/INIT.md`](context/INIT.md), the phase plan is in [`context/PHASES.md`](context/PHASES.md), and progress is in [`context/ROADMAP.md`](context/ROADMAP.md).
 
-**Status:** Phase 1 is complete. The app opens an empty player window, and there is no playback yet (that's Phase 2).
+**Status:** Phases 0–2 and 5 are complete. Phase 3 is partly done (the benchmark harness exists, but no baseline has been recorded yet) and Phase 4 hasn't started. Both were skipped on purpose, and [`context/ROADMAP.md`](context/ROADMAP.md) lists what remains.
+
+Y-Player plays local files with hardware decoding and has:
+- playlists (M3U/PLS, repeat, shuffle)
+- audio and subtitle track switching, external subtitles, delays, subtitle styling
+- speed control, frame stepping, A-B repeat, chapters
+- aspect, rotation and flip, screenshots
+- audio device and channel selection
+- resume, recent files
+- rebindable shortcuts
+
+## Everyday commands
+
+Run these from the project folder in a Command Prompt or PowerShell:
+
+| Command | What it does |
+|---------|--------------|
+| `build` | Builds `build\release\bin\Y-Player.exe` (no tests). Close the player first, because Windows locks a running exe. |
+| `run` | Starts the already-built player. Files are passed through: `run "C:\path\video.mkv"` |
+| `build-run` | Both: build, then start. |
+
+`scripts\build.cmd` is still the full build: deps, all targets, tests (see Quick start below).
+
+## Using the player
+
+```bat
+build\release\bin\Y-Player.exe "C:\path\to\video.mkv"
+```
+
+You can also start it with no arguments and use **File › Open** (Ctrl+O), or drag a file onto the window.
+
+Default keys (rebind them in **Tools › Keyboard Shortcuts**, Ctrl+K). Right-click the video for every menu.
+
+| Key | Action | Key | Action |
+|-----|--------|-----|--------|
+| Space | Play / pause | Ctrl+Space | Stop |
+| ← / → | Seek 5 s (Shift: 30 s) | PgUp / PgDn | Previous / next file |
+| , / . | Previous / next frame | [ / ] / Backspace | Slower / faster / normal speed |
+| ↑ / ↓ | Volume | M | Mute |
+| A | Next audio track | S | Next subtitle track (then off) |
+| Ctrl+− / Ctrl+= / Ctrl+0 | Audio delay | Z / X / Shift+Z | Subtitle delay |
+| L / Shift+L | A-B repeat / clear | Ctrl+PgUp / Ctrl+PgDn | Chapters |
+| R / H | Cycle repeat / shuffle | F6 | Playlist |
+| F, Enter, double-click | Fullscreen | Esc | Leave fullscreen |
+| Ctrl+E (Shift: no subs) | Screenshot to Pictures\Y-Player | Ctrl+A / Ctrl+R | Cycle aspect / rotate |
+| Ctrl+T / Ctrl+B | Always on top / borderless | O, Ctrl+O / Ctrl+Shift+O | Open / add to playlist |
+| Alt+O | Load subtitle file | Ctrl+S / Ctrl+Q | Save playlist / quit |
 
 ## Quick start
 
@@ -46,7 +92,7 @@ engine/mpv/     libmpv backend
 platform/win/   Windows-specific queries (GPU/OS/CPU)
 ui/             Qt Widgets UI
 tests/          Qt Test unit tests (run with ctest)
-bench/          benchmark runner (Phase 3)
+bench/          benchmark corpus generator and runner (ADR-012)
 cmake/          shared CMake modules
 scripts/        build.cmd, fetch_deps.py
 spikes/         throwaway experiments (not part of the product build)
@@ -81,3 +127,5 @@ The module boundaries are described in [`context/ARCHITECTURE.md`](context/ARCHI
 - [`context/DECISIONS.md`](context/DECISIONS.md): architecture decision records
 - [`context/LICENSES.md`](context/LICENSES.md): third-party licensing
 - [`context/ROADMAP.md`](context/ROADMAP.md): phase status
+- [`context/TESTING.md`](context/TESTING.md): test suites and environments
+- `context/PERFORMANCE.md`: benchmark results. Not written yet, because the Phase 3 baseline was skipped (see ROADMAP)

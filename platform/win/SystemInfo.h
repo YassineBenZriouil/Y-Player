@@ -20,4 +20,7 @@ struct SystemInfo {
 
 SystemInfo querySystemInfo();
 
+// Milliseconds since this process was created (startup/first-frame timing).
+qint64 processAgeMs();
+
 }  // namespace yp::platform

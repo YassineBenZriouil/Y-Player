@@ -1,4 +1,4 @@
-qt_add_executable(y-player WIN32 main.cpp)
+qt_add_executable(y-player WIN32 main.cpp BenchMode.cpp BenchMode.h)
 set_target_properties(y-player PROPERTIES OUTPUT_NAME "Y-Player")
 target_link_libraries(y-player PRIVATE yp_core yp_engine_mpv yp_platform_win yp_ui)
 yp_target_defaults(y-player)

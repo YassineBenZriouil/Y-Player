@@ -1,15 +1,17 @@
 @echo off
 rem One-command build: fetch deps, configure, build, run tests.
-rem   scripts\build.cmd [debug|release|relwithdebinfo|ci] [run]
+rem   scripts\build.cmd [debug|release|relwithdebinfo|ci] [run] [exe]
 rem "ci" = Release + clang-tidy (warnings as errors). "run" launches the app after a green build.
+rem "exe" builds only Y-Player.exe and skips the tests (used by the root build.cmd).
 setlocal EnableExtensions
 for %%I in ("%~dp0..") do set "ROOT=%%~fI"
 set "PRESET=debug"
 set "RUN="
+set "EXEONLY="
 
 :args
 if "%~1"=="" goto argsdone
-if /i "%~1"=="run" (set "RUN=1") else (set "PRESET=%~1")
+if /i "%~1"=="run" (set "RUN=1") else if /i "%~1"=="exe" (set "EXEONLY=1") else (set "PRESET=%~1")
 shift
 goto args
 :argsdone
@@ -26,8 +28,13 @@ call "%VCVARS%" >nul || goto fail
 python "%ROOT%\scripts\fetch_deps.py" || goto fail
 cd /d "%ROOT%" || goto fail
 cmake --preset %PRESET% || goto fail
+if defined EXEONLY goto exeonly
 cmake --build --preset %PRESET% || goto fail
 ctest --preset %PRESET% || goto fail
+goto built
+:exeonly
+cmake --build --preset %PRESET% --target y-player || goto fail
+:built
 
 echo.
 echo Build OK: %ROOT%\build\%PRESET%\bin\Y-Player.exe

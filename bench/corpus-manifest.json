@@ -1,0 +1,103 @@
+{
+  "generator": "bench/make_corpus.py",
+  "clips": [
+    {
+      "id": "h264_1080p60",
+      "desc": "H.264 8-bit 1080p60, 12 Mb/s",
+      "file": "h264_1080p60.mp4",
+      "size": 38405029,
+      "sha256": "3d04614c5358c2120f0fea04ac3737dbefc862bfdae8657d19ee6aaad3ce6038"
+    },
+    {
+      "id": "h264_2160p60_hibr",
+      "desc": "H.264 8-bit 2160p60, 100 Mb/s (high bitrate)",
+      "file": "h264_2160p60_hibr.mp4",
+      "size": 314860768,
+      "sha256": "69f67a67d8a27611b1181e37f703e43a1819ed9c524f782a3e3ed7f7b9746bd0"
+    },
+    {
+      "id": "h264_1080p120",
+      "desc": "H.264 8-bit 1080p120 (high frame rate)",
+      "file": "h264_1080p120.mp4",
+      "size": 63757449,
+      "sha256": "100beba1a6960d7af21f8f065dfc98f69c92f3ec8f6c84135b759f6dd2ea0df4"
+    },
+    {
+      "id": "h264_1080p_vfr",
+      "desc": "H.264 8-bit 1080p variable frame rate (60 fps with every 3rd frame dropped)",
+      "file": "h264_1080p_vfr.mkv",
+      "size": 32218999,
+      "sha256": "3c337cd8e0b4be96a19752b42706894fc56fbf1f939c5ca2b95a2ad841f1a582"
+    },
+    {
+      "id": "hevc10_1080p60",
+      "desc": "HEVC 10-bit 1080p60, 10 Mb/s",
+      "file": "hevc10_1080p60.mp4",
+      "size": 32117900,
+      "sha256": "121d5ff0980e1629cf97603e2f28215f1869d2049e6cae40a47b914fbfd74de5"
+    },
+    {
+      "id": "hevc10_2160p60",
+      "desc": "HEVC 10-bit 2160p60, 40 Mb/s",
+      "file": "hevc10_2160p60.mkv",
+      "size": 126508465,
+      "sha256": "e18eed555a9ed24d27c87ce4dc8fcb272992ae4a041ade0c1375e59698ddb915"
+    },
+    {
+      "id": "hevc10_2160p60_hdr10",
+      "desc": "HEVC 10-bit 2160p60 HDR10 (BT.2020 / PQ, mastering metadata) -> tone-mapped on SDR displays",
+      "file": "hevc10_2160p60_hdr10.mkv",
+      "size": 126529712,
+      "sha256": "6d61bda3183e3773c71c20ee57686f2fb94999df3f029d62caefb707a18cb28e"
+    },
+    {
+      "id": "hevc10_4320p30",
+      "desc": "HEVC 10-bit 4320p30 (8K), 60 Mb/s",
+      "file": "hevc10_4320p30.mkv",
+      "size": 149203810,
+      "sha256": "1da9458c0d4e0c85705d8c5e07c426fba64075e8a0ba915a3126369b65ecce3f"
+    },
+    {
+      "id": "av1_10_1080p60",
+      "desc": "AV1 10-bit 1080p60, 8 Mb/s",
+      "file": "av1_10_1080p60.mkv",
+      "size": 22270100,
+      "sha256": "eb90162ff073029d21d1b7148dc3044f57be3309357637aeda27b3717ddd9851"
+    },
+    {
+      "id": "av1_10_2160p60",
+      "desc": "AV1 10-bit 2160p60, 25 Mb/s",
+      "file": "av1_10_2160p60.mkv",
+      "size": 70629545,
+      "sha256": "e8a7adff71b1e586a610ff35caaaa374a35577c796c6dfcf0ebbe1cbf4daea8a"
+    },
+    {
+      "id": "vp9_1080p60",
+      "desc": "VP9 8-bit 1080p60, 10 Mb/s",
+      "file": "vp9_1080p60.webm",
+      "size": 42415986,
+      "sha256": "7d65a71bef790676b894fbdc486faff500504935f54ad549f48d957885f11a99"
+    },
+    {
+      "id": "vp9_2160p60",
+      "desc": "VP9 8-bit 2160p60, 25 Mb/s",
+      "file": "vp9_2160p60.webm",
+      "size": 84095326,
+      "sha256": "73076b05136f8a5abec3e7ed08a177f42cebac0a2e5256fe8b7f7bff30efe4e0"
+    },
+    {
+      "id": "multitrack_1080p30",
+      "desc": "H.264 1080p30 with 2 audio tracks (AAC, Opus) and 2 subtitle tracks (SRT)",
+      "file": "multitrack_1080p30.mkv",
+      "size": 27702304,
+      "sha256": "40883552892bf5deca28df659aaa8702621bdf7632dca0a56cc646b3dfec2e9c"
+    },
+    {
+      "id": "damaged_h264_1080p60",
+      "desc": "h264_1080p60 with 64 KiB corrupted every 2 MiB",
+      "file": "damaged_h264_1080p60.mp4",
+      "size": 38405029,
+      "sha256": "287adb2c4faf32c6dc94af580e2d2bd181e95ed32a3a444d07cefec0d310b5ed"
+    }
+  ]
+}

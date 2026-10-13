@@ -166,3 +166,84 @@ The script is idempotent: stamp files skip work that is already done, and a part
 5. run the tests
 
 **Static analysis:** clang-tidy (LLVM 23.1.3) runs in the `ci` preset with warnings as errors (`.clang-tidy`). The MSVC `/W4 /WX` setting applies to every preset.
+
+---
+
+## ADR-011 — Run libmpv teardown off the UI thread (unmatched `CoUninitialize`)
+
+**Status:** Accepted (Phase 2). Revised in Phase 5.
+
+**Context:**
+- Closing the app after using fullscreen crashed in about 1 of 3 runs with an access violation in `~QApplication`. The symbolized stack was `QWindowsContext::~QWindowsContext` → `winrt::clear_factory_cache` → a call into the already-unloaded `C:\Windows\System32\Windows.UI.dll`.
+- A probe showed the UI thread's COM apartment present before `mpv_terminate_destroy` (`CoInitializeEx` returned `S_FALSE`) and **gone** after it (`S_OK`). libmpv's teardown calls `CoUninitialize` on its calling thread without matching it. That tears down Qt's OLE apartment, which unloads the WinRT DLL whose factory Qt cached (for example when entering fullscreen).
+
+**First fix, Phase 2:** hold one extra COM reference on the UI thread.
+- This passed the Phase 2 tests.
+- In Phase 5 it **failed**: with more engine lifecycles and features in play, the apartment was still destroyed, and the test process crashed in `~QApplication` the same way. A single reference can't absorb an unknown number of stray calls.
+
+**Decision:** `~MpvEngine` runs `mpv_terminate_destroy` on a throwaway `std::thread` and joins it. mpv's stray `CoUninitialize` hits a thread with no COM state, where it does nothing. Teardown stays synchronous, so the video window still outlives mpv. The extra-reference workaround is removed.
+
+**Evidence:**
+- `tst_mpvengine`: 23 of 23 pass, including `teardownIsFastAndKeepsComApartment` (UI-thread COM intact after teardown; teardown took 63 ms). The process exits cleanly after 20+ engine lifecycles.
+- Before the change, the same test run failed that check and crashed on exit.
+
+**Revisit:** report upstream to mpv.
+
+---
+
+## ADR-012 — Benchmark method: external sampler + in-process report
+
+**Status:** Accepted (Phase 3)
+
+**Context:** PotPlayer exposes no internals, and comparisons must use identical methods (`INIT.md` §6).
+
+**Decision:**
+- **External metrics, the same for every player** (`bench/run_bench.py`):
+  - CPU as process CPU time over wall time
+  - working set and private bytes
+  - per-process GPU engine utilisation, split by engine type (3D, VideoDecode, VideoProcessing, Copy)
+  - GPU dedicated and shared memory, via Windows PDH counters
+  - time from launch to window shown
+  - same window size (1280×760), same warm-up and sampling period, players interleaved per clip to spread thermal drift
+- **Y-Player-only metrics** come from `--bench-report`: startup, first frame, frame drops, A/V offset, seek latency.
+- **Audio** is muted at the default device endpoint for the run and then restored, so both players keep a real audio pipeline while the user hears nothing.
+- **Corpus:** synthetic clips from `bench/make_corpus.py`, recorded with SHA-256 hashes in `bench/corpus-manifest.json`. The media itself is not committed.
+
+**Limits:**
+- "First frame" is mpv's `playback-restart` (the first frame is ready to present), not a photon measurement.
+- Audio underruns are not exposed by libmpv and are not measured.
+- PotPlayer's first-frame and seek times can't be observed from outside.
+
+---
+
+## ADR-013 — Small test clips are committed
+
+**Status:** Accepted (Phase 2)
+
+`tests/media/` holds four 3-second 320×240 clips (H.264/AAC MP4, HEVC 10-bit/AAC MKV, VP9/Opus WebM, AV1 10-bit/Opus MKV), about 350 KB in total, plus a fake media file. They're committed so the integration test runs on a fresh clone and in CI, with no download. `tests/media/generate.sh` regenerates them.
+
+---
+
+## ADR-014 — Local persistence: one INI, a session playlist, a resume file
+
+**Status:** Accepted (Phase 5)
+
+**Decision:** Everything Y-Player stores lives in `%LOCALAPPDATA%\Y-Player` (`INIT.md` §17: local only, never uploaded):
+- `settings.ini` (`QSettings` INI): volume, mute, audio channels, resume on/off, repeat and shuffle, recent files, subtitle style, shortcut overrides (only bindings that differ from the defaults), always-on-top, current playlist index.
+- `session.m3u8`: the playlist, restored on start without autoplay.
+- `resume.json`: stop positions keyed by path. Policy: media shorter than 60 s, stops before 10 s and stops in the last 20 s are not kept, and at most 500 entries are stored, evicting the least recently used.
+- `logs/`: see ADR-009.
+
+These files are saved on close and when the shortcut or subtitle-style dialogs are accepted. `--bench-report` runs never write them, so benchmarks can't resume old positions or overwrite the user's session.
+
+Phase 6's settings window will edit the same keys, so no migration is needed.
+
+---
+
+## ADR-015 — Window style changes go through Win32, not Qt window flags
+
+**Status:** Accepted (Phase 5)
+
+**Context:** `QWidget::setWindowFlags` (for `WindowStaysOnTopHint`, `FramelessWindowHint`) recreates the top-level native window, and with it the native video child window that libmpv presents into.
+
+**Decision:** Always-on-top uses `SetWindowPos(HWND_TOPMOST)`. Borderless removes `WS_CAPTION` with `SetWindowLongPtr`, keeping the resizable frame (`platform/win/WindowStyle`). In borderless mode a drag on the video moves the window (`QWindow::startSystemMove` after the drag distance, so double-click still toggles fullscreen). Leaving fullscreen re-applies borderless, because Qt restores the caption.
