@@ -1,8 +1,12 @@
 #pragma once
 
+#include "core/EngineSettings.h"
+
 #include <QList>
 #include <QObject>
 #include <QString>
+
+#include <utility>
 
 namespace yp {
 Q_NAMESPACE
@@ -59,6 +63,8 @@ struct SubtitleStyle {
     double outlineSize = 2.5;
     int position = 100;          // 0 = top, 100 = bottom edge of the video
     bool overrideStyled = false;
+
+    bool operator==(const SubtitleStyle&) const = default;
 };
 
 // Live counters for diagnostics and benchmarks. -1 / negative = not reported by the backend
@@ -117,6 +123,10 @@ public:
     virtual void screenshot(const QString& path, bool withSubtitles) = 0;
     virtual void showMessage(const QString& text, int milliseconds = 1500) = 0;  // on-video OSD
 
+    // Applies hardware/rendering/picture/filter/audio/language/performance settings. Only what
+    // changed since the last call is sent, so unchanged filters are not rebuilt (no glitches).
+    virtual void applySettings(const EngineSettings& settings) = 0;
+
     [[nodiscard]] virtual PlaybackState state() const = 0;
     [[nodiscard]] virtual double position() const = 0;  // seconds
     [[nodiscard]] virtual double duration() const = 0;  // seconds, 0 when unknown
@@ -132,6 +142,8 @@ public:
     [[nodiscard]] virtual int currentChapter() const = 0;  // -1 = none
     [[nodiscard]] virtual MediaInfo mediaInfo() const = 0;
     [[nodiscard]] virtual PlaybackStats stats() const = 0;  // queried on demand; not free, don't poll per frame
+    // Human-readable (label, value) rows for the diagnostics panel; "—" where unavailable.
+    [[nodiscard]] virtual QList<std::pair<QString, QString>> diagnostics() const = 0;
 
 Q_SIGNALS:
     void stateChanged(yp::PlaybackState state);

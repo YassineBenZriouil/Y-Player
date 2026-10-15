@@ -10,7 +10,7 @@ The full phase plan lives in [`PHASES.md`](PHASES.md). This file tracks status.
 | 3 | Benchmark harness & baseline | ⚠️ **Skipped partway** (2026-10-11): harness built, baseline **not** recorded |
 | 4 | Pipeline optimization | ⚠️ **Skipped** (2026-10-11): not started |
 | 5 | Core playback features | ✅ Done (2026-10-11), with one unverifiable criterion, see below |
-| 6 | Advanced features & settings | — |
+| 6 | Advanced features & settings | 🧪 Implemented (2026-10-15), **awaiting owner testing** |
 | 7 | UI/UX & identity | — |
 | 8 | Hardening & reliability | — |
 | 9 | Packaging & release | — |
@@ -39,6 +39,44 @@ The owner stopped the Phase 3 baseline run and moved straight to Phase 5. That d
 - Y-Player 4K HEVC 10-bit: about 4 % of one core, d3d11va, 0 dropped frames, 427 ms from open to first frame.
 - PotPlayer defaults on the same clip: about 285 % of one core (software decoding).
 - Y-Player startup varied from 154 ms to 2189 ms between cold and warm starts. Phase 4 should investigate.
+
+## Phase 6: implemented, not yet tested
+
+From now on the owner does all testing; nothing in Phase 6 was run by the implementer. It compiles cleanly (`/W4 /WX` and the clang-tidy CI preset), and that is all that has been verified.
+
+**What to check:**
+
+1. **Settings window** (Tools › Settings, Ctrl+,):
+   - All 13 categories open, and the search box filters rows and hides empty categories.
+   - Apply, OK, Cancel and Restore defaults behave as expected.
+   - Values survive a restart.
+2. **Import/export** (General page): export, change something, import, and confirm the change is undone. Recent files and the playlist are never exported.
+3. **Video picture:** brightness, contrast, saturation, gamma and hue. Deinterlacing on an interlaced file.
+4. **Hardware decoding modes:** Diagnostics should show the matching decoder for each mode, and "Off" should show none.
+5. **Rendering:**
+   - each upscaler
+   - tone mapping on an HDR file (`bench/media/hevc10_2160p60_hdr10.mkv`)
+   - HDR peak detection, HDR passthrough (needs Windows HDR on), smooth motion
+6. **Filters:**
+   - sharpen (a GPU shader)
+   - denoise (a CPU filter; watch CPU at 4K)
+   - equalizer and its presets
+   - normalization, downmix normalization
+7. **Languages:** preferred audio/subtitle languages on `tests/media/multitrack.mkv`, and auto-loading an `.srt` next to a video.
+8. **Performance and logging:** cache size, decoder threads (with hardware decoding Off), and the log level (the log grows at "Verbose").
+9. **Profiles** (Video › Profiles): built-ins, save the current settings, delete. The checkmark should follow the active profile.
+10. **Bookmarks** (Playback › Bookmarks, key B): add, jump, delete, delete all, and confirm they survive a restart.
+11. **Diagnostics panel** (Tools › Diagnostics, Ctrl+I): values update while playing, and Copy works.
+12. **File associations:**
+    - Check some types, apply, and Y-Player should appear in Explorer's "Open with".
+    - "Open Windows default apps" should open the Windows page.
+    - Unchecking and applying should remove the entries.
+13. **Playlist options:** "Remember playlist" off means an empty playlist after a restart. "Continue through the playlist" off means it stops at the end of a file.
+
+**Exit criteria status:**
+- [ ] With filters off, performance is unchanged. Unverifiable: there's no baseline, because Phases 3 and 4 were skipped.
+- [ ] Settings persist, and import/export round-trips. For the owner to test.
+- [ ] Diagnostics shows real values. For the owner to test.
 
 ## Phase 5 exit criteria
 

@@ -49,6 +49,8 @@ Default keys (rebind them in **Tools › Keyboard Shortcuts**, Ctrl+K). Right-cl
 | Ctrl+E (Shift: no subs) | Screenshot to Pictures\Y-Player | Ctrl+A / Ctrl+R | Cycle aspect / rotate |
 | Ctrl+T / Ctrl+B | Always on top / borderless | O, Ctrl+O / Ctrl+Shift+O | Open / add to playlist |
 | Alt+O | Load subtitle file | Ctrl+S / Ctrl+Q | Save playlist / quit |
+| Ctrl+, | Settings | Ctrl+I | Diagnostics panel |
+| B | Add bookmark | | |
 
 ## Quick start
 

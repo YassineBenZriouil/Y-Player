@@ -1,8 +1,11 @@
 add_library(yp_core STATIC
   Adjustments.cpp Adjustments.h
+  Bookmarks.cpp Bookmarks.h
+  EngineSettings.cpp EngineSettings.h
   Logging.cpp Logging.h
   PlaybackEngine.h
   PlaybackStateMachine.cpp PlaybackStateMachine.h
+  PlayerSettings.cpp PlayerSettings.h
   Playlist.cpp Playlist.h
   PlaylistIO.cpp PlaylistIO.h
   RecentFiles.cpp RecentFiles.h

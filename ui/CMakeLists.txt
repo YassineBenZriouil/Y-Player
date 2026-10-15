@@ -1,9 +1,11 @@
 add_library(yp_ui STATIC
+  DiagnosticsDialog.cpp DiagnosticsDialog.h
   Icons.cpp Icons.h
   MainWindow.cpp MainWindowMenus.cpp MainWindow.h
   PlaylistModel.cpp PlaylistModel.h
   PlaylistPanel.cpp PlaylistPanel.h
   SeekSlider.cpp SeekSlider.h
+  SettingsDialog.cpp SettingsDialog.h
   ShortcutDialog.cpp ShortcutDialog.h
   ShortcutMap.cpp ShortcutMap.h
   SubtitleStyleDialog.cpp SubtitleStyleDialog.h

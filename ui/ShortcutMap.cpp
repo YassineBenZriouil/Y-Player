@@ -41,6 +41,7 @@ QList<ActionDef> playerActions() {
         {QStringLiteral("playback.cycleRepeat"), tr("Cycle Repeat Mode"), {k("R")}},
         {QStringLiteral("playback.shuffle"), tr("S&huffle"), {k("H")}},
         {QStringLiteral("playback.resume"), tr("&Resume From Last Position"), {}},
+        {QStringLiteral("playback.bookmarkAdd"), tr("Add &Bookmark"), {k("B")}},
 
         {QStringLiteral("audio.volumeUp"), tr("Volume &Up"), {k("Up")}},
         {QStringLiteral("audio.volumeDown"), tr("Volume &Down"), {k("Down")}},
@@ -68,6 +69,8 @@ QList<ActionDef> playerActions() {
         {QStringLiteral("video.borderless"), tr("&Borderless Window"), {k("Ctrl+B")}},
 
         {QStringLiteral("view.playlist"), tr("&Playlist"), {k("F6")}},
+        {QStringLiteral("tools.settings"), tr("&Settings..."), {k("Ctrl+,")}},
+        {QStringLiteral("tools.diagnostics"), tr("&Diagnostics"), {k("Ctrl+I")}},
         {QStringLiteral("tools.shortcuts"), tr("&Keyboard Shortcuts..."), {k("Ctrl+K")}},
         {QStringLiteral("help.about"), tr("&About Y-Player"), {}},
     };

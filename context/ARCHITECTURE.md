@@ -100,7 +100,14 @@ All window shortcuts are `QAction`s added to the window itself, so they keep wor
   - The resume point is recorded whenever the file changes and on close.
 - **Persistence:** ADR-014.
 
+## Settings (Phase 6, ADR-016/017)
+
+- **Model:** `core/EngineSettings` and `core/PlayerSettings` hold the values. `ui/SettingsDialog` edits a copy and emits `applied()`. `MainWindow::applyPrefs()` pushes the result to the engine (`applySettings`, which applies a diff) and to the UI (seek steps, always-on-top, …).
+- **Profiles:** `EngineSettings` snapshots.
+- **Bookmarks:** `core/Bookmarks`.
+- **Diagnostics panel:** `ui/DiagnosticsDialog` polls `IPlaybackEngine::diagnostics()` twice a second, only while it is visible.
+- **File associations:** `platform/win/FileAssociations`.
+
 ## Planned modules (from `context/INIT.md` §4, added in their phases)
 
-- Settings window and profiles, file associations (Phase 6)
-- Diagnostics panel (Phase 6) and crash handling (Phase 8)
+- Crash handling (Phase 8)

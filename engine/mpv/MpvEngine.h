@@ -6,6 +6,7 @@
 #include <QHash>
 
 #include <atomic>
+#include <optional>
 
 struct mpv_handle;
 struct mpv_event_property;
@@ -47,6 +48,7 @@ public:
     void seekChapter(int index) override;
     void screenshot(const QString& path, bool withSubtitles) override;
     void showMessage(const QString& text, int milliseconds = 1500) override;
+    void applySettings(const EngineSettings& settings) override;
 
     [[nodiscard]] PlaybackState state() const override { return state_; }
     [[nodiscard]] double position() const override { return position_; }
@@ -63,6 +65,7 @@ public:
     [[nodiscard]] int currentChapter() const override { return currentChapter_; }
     [[nodiscard]] MediaInfo mediaInfo() const override { return info_; }
     [[nodiscard]] PlaybackStats stats() const override;
+    [[nodiscard]] QList<std::pair<QString, QString>> diagnostics() const override;
 
 private:
     enum class Request { SubtitleFile, Screenshot };
@@ -78,6 +81,8 @@ private:
     void apply(PlaybackEvent event);
     void fail(const QString& reason);
     void setPause(bool paused);
+    void rebuildVideoFilters();
+    [[nodiscard]] QString sharpenShaderPath();
     void setString(const char* name, const QByteArray& value);
     void setDouble(const char* name, double value);
     void command(std::initializer_list<QByteArray> args, quint64 replyId = 0);
@@ -107,6 +112,11 @@ private:
     int currentChapter_ = -1;
     bool flipH_ = false;
     bool flipV_ = false;
+    int denoise_ = 0;
+    QString vfChain_;
+    QString afChain_;
+    QString shaderPath_;
+    std::optional<EngineSettings> applied_;
     MediaInfo info_;
     bool infoDirty_ = false;
     QString lastPath_;

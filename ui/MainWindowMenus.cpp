@@ -51,10 +51,10 @@ void MainWindow::buildActions() {
         {QStringLiteral("playback.stop"), [engine] { engine()->stop(); }},
         {QStringLiteral("playback.previous"), [this] { playPrevious(); }},
         {QStringLiteral("playback.next"), [this] { playNext(true); }},
-        {QStringLiteral("playback.seekForward"), [this] { seekBy(5.0); }},
-        {QStringLiteral("playback.seekBackward"), [this] { seekBy(-5.0); }},
-        {QStringLiteral("playback.seekForwardLong"), [this] { seekBy(30.0); }},
-        {QStringLiteral("playback.seekBackwardLong"), [this] { seekBy(-30.0); }},
+        {QStringLiteral("playback.seekForward"), [this] { seekBy(prefs_.seekShort); }},
+        {QStringLiteral("playback.seekBackward"), [this] { seekBy(-prefs_.seekShort); }},
+        {QStringLiteral("playback.seekForwardLong"), [this] { seekBy(prefs_.seekLong); }},
+        {QStringLiteral("playback.seekBackwardLong"), [this] { seekBy(-prefs_.seekLong); }},
         {QStringLiteral("playback.frameNext"), [engine] { engine()->frameStep(false); }},
         {QStringLiteral("playback.framePrevious"), [engine] { engine()->frameStep(true); }},
         {QStringLiteral("playback.faster"), [this] { setSpeed(stepSpeed(engine_->speed(), +1)); }},
@@ -75,8 +75,8 @@ void MainWindow::buildActions() {
         {QStringLiteral("playback.shuffle"), [this] { setShuffle(!playlist_.shuffle()); }},
         {QStringLiteral("playback.resume"),
          [this] {
-             resumeEnabled_ = action(QStringLiteral("playback.resume"))->isChecked();
-             notify(resumeEnabled_ ? tr("Resume playback on") : tr("Resume playback off"));
+             prefs_.resume = action(QStringLiteral("playback.resume"))->isChecked();
+             notify(prefs_.resume ? tr("Resume playback on") : tr("Resume playback off"));
          }},
         {QStringLiteral("audio.volumeUp"), [this] { changeVolumeBy(5); }},
         {QStringLiteral("audio.volumeDown"), [this] { changeVolumeBy(-5); }},
@@ -105,10 +105,13 @@ void MainWindow::buildActions() {
         {QStringLiteral("video.rotate"), [this] { setRotation(rotation_ + 90); }},
         {QStringLiteral("video.flipH"), [this] { setFlip(!flipH_, flipV_); }},
         {QStringLiteral("video.flipV"), [this] { setFlip(flipH_, !flipV_); }},
-        {QStringLiteral("video.onTop"), [this] { setAlwaysOnTop(!onTop_); }},
+        {QStringLiteral("video.onTop"), [this] { setAlwaysOnTop(!prefs_.onTop); }},
         {QStringLiteral("video.borderless"), [this] { setBorderless(!borderless_); }},
         {QStringLiteral("view.playlist"), [this] { setPlaylistVisible(!playlistPanel_->isVisible()); }},
         {QStringLiteral("tools.shortcuts"), [this] { showShortcutDialog(); }},
+        {QStringLiteral("tools.settings"), [this] { showSettingsDialog(); }},
+        {QStringLiteral("tools.diagnostics"), [this] { showDiagnostics(); }},
+        {QStringLiteral("playback.bookmarkAdd"), [this] { addBookmark(); }},
         {QStringLiteral("help.about"), [this] { QMessageBox::about(this, tr("About Y-Player"), aboutText_); }},
     };
 
@@ -168,6 +171,8 @@ void MainWindow::buildMenus() {
     QMenu* ab = playback->addMenu(tr("&A-B Repeat"));
     add(ab, "playback.abLoop");
     add(ab, "playback.abClear");
+    QMenu* bookmarks = playback->addMenu(tr("&Bookmarks"));
+    connect(bookmarks, &QMenu::aboutToShow, this, [this, bookmarks] { fillBookmarksMenu(bookmarks); });
     QMenu* chapters = playback->addMenu(tr("&Chapters"));
     connect(chapters, &QMenu::aboutToShow, this, [this, chapters] { fillChapterMenu(chapters); });
     playback->addSeparator();
@@ -205,7 +210,7 @@ void MainWindow::buildMenus() {
                                                     {QStringLiteral("mono"), tr("Mono")}};
     for (const auto& [id, name] : layouts) {
         QAction* a = channelsMenu_->addAction(name, this, [this, id] {
-            audioChannels_ = id;
+            prefs_.audioChannels = id;
             engine_->setAudioChannels(id);
         });
         a->setCheckable(true);
@@ -260,6 +265,8 @@ void MainWindow::buildMenus() {
     }
     rotateMenu_->addSeparator();
     add(rotateMenu_, "video.rotate");
+    QMenu* profiles = video->addMenu(tr("&Profiles"));
+    connect(profiles, &QMenu::aboutToShow, this, [this, profiles] { fillProfilesMenu(profiles); });
     add(video, "video.flipH");
     add(video, "video.flipV");
     video->addSeparator();
@@ -272,6 +279,8 @@ void MainWindow::buildMenus() {
     add(view, "view.playlist");
 
     QMenu* tools = menuBar()->addMenu(tr("&Tools"));
+    add(tools, "tools.settings");
+    add(tools, "tools.diagnostics");
     add(tools, "tools.shortcuts");
 
     QMenu* help = menuBar()->addMenu(tr("&Help"));

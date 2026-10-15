@@ -1,7 +1,9 @@
 #pragma once
 
 #include "core/Adjustments.h"
+#include "core/Bookmarks.h"
 #include "core/PlaybackEngine.h"
+#include "core/PlayerSettings.h"
 #include "core/Playlist.h"
 #include "core/RecentFiles.h"
 #include "core/ResumeStore.h"
@@ -23,6 +25,7 @@ class QToolButton;
 
 namespace yp::ui {
 
+class DiagnosticsDialog;
 class PlaylistModel;
 class PlaylistPanel;
 class SeekSlider;
@@ -68,6 +71,8 @@ private:
     void fillTrackMenu(QMenu* menu, TrackType type);
     void fillDeviceMenu(QMenu* menu);
     void showContextMenu(const QPoint& globalPos);
+    void fillProfilesMenu(QMenu* menu);
+    void fillBookmarksMenu(QMenu* menu);
 
     // MainWindow.cpp: playback and playlist
     QWidget* buildControls();
@@ -114,6 +119,17 @@ private:
     void showError(const QString& message);
     void notify(const QString& message);  // OSD + status bar
 
+    // MainWindow.cpp: settings, profiles, bookmarks (Phase 6)
+    void applyPrefs();
+    void applySettingsFromDialog(const PlayerSettings& settings);
+    void showSettingsDialog();
+    void showDiagnostics();
+    void exportSettings();
+    bool importSettings();
+    QList<NamedProfile> userProfiles();
+    void applyProfile(const QString& name, const EngineSettings& settings);
+    void addBookmark();
+
     // MainWindow.cpp: persistence
     void loadSettings();
     void saveSettings();
@@ -121,7 +137,8 @@ private:
     std::unique_ptr<IPlaybackEngine> engine_;
     QString aboutText_;
     QString dataDir_;
-    QSettings settings_;
+    QSettings store_;
+    PlayerSettings prefs_;
     bool persistent_ = true;
 
     Playlist playlist_;
@@ -129,7 +146,7 @@ private:
     PlaylistPanel* playlistPanel_ = nullptr;
     RecentFiles recent_;
     ResumeStore resume_;
-    bool resumeEnabled_ = true;
+    Bookmarks bookmarks_;
     double resumedAt_ = 0.0;
     int consecutiveFailures_ = 0;
 
@@ -140,15 +157,13 @@ private:
     QMenu* aspectMenu_ = nullptr;
     QMenu* rotateMenu_ = nullptr;
     QMenu* channelsMenu_ = nullptr;
+    DiagnosticsDialog* diagnostics_ = nullptr;
 
     AbLoop abLoop_;
-    SubtitleStyle subtitleStyle_;
-    QString audioChannels_ = QStringLiteral("auto");
     double aspect_ = 0.0;
     int rotation_ = 0;
     bool flipH_ = false;
     bool flipV_ = false;
-    bool onTop_ = false;
     bool borderless_ = false;
     bool wasMaximized_ = false;
     QString lastDirectory_;

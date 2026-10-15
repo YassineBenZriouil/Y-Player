@@ -5,21 +5,26 @@
 #include "core/PlaylistIO.h"
 #include "core/TimeFormat.h"
 #include "platform/win/WindowStyle.h"
+#include "ui/DiagnosticsDialog.h"
 #include "ui/PlaylistModel.h"
 #include "ui/PlaylistPanel.h"
 #include "ui/SeekSlider.h"
+#include "ui/SettingsDialog.h"
 #include "ui/ShortcutDialog.h"
 #include "ui/SubtitleStyleDialog.h"
 #include "ui/VideoWidget.h"
 
 #include <QAction>
+#include <QActionGroup>
 #include <QCloseEvent>
+#include <QDesktopServices>
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QLabel>
 #include <QMenuBar>
 #include <QMimeData>
@@ -30,6 +35,7 @@
 #include <QStyle>
 #include <QTimer>
 #include <QToolButton>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -75,7 +81,7 @@ MainWindow::MainWindow(std::unique_ptr<IPlaybackEngine> engine, QString aboutTex
       engine_(std::move(engine)),
       aboutText_(std::move(aboutText)),
       dataDir_(dataDir),
-      settings_(dataDir + QStringLiteral("/settings.ini"), QSettings::IniFormat),
+      store_(dataDir + QStringLiteral("/settings.ini"), QSettings::IniFormat),
       shortcuts_(playerActions()) {
     setWindowTitle(QStringLiteral("Y-Player"));
     setAcceptDrops(true);
@@ -146,7 +152,7 @@ MainWindow::~MainWindow() {
 
 void MainWindow::setBenchmarkMode() {
     persistent_ = false;
-    resumeEnabled_ = false;
+    prefs_.resume = false;
 }
 
 QWidget* MainWindow::buildControls() {
@@ -248,7 +254,7 @@ void MainWindow::playIndex(int row) {
     const QString path = playlist_.at(row);
     abLoop_.clear();
     engine_->setAbLoop(-1.0, -1.0);  // mpv keeps A-B points across files
-    resumedAt_ = resumeEnabled_ ? resume_.positionFor(path) : 0.0;
+    resumedAt_ = prefs_.resume ? resume_.positionFor(path) : 0.0;
     engine_->open(path, resumedAt_);
     recent_.add(path);
 }
@@ -271,7 +277,7 @@ void MainWindow::playPrevious() {
 void MainWindow::recordResumePoint() {
     const int row = playlist_.current();
     const PlaybackState s = engine_->state();
-    if (!resumeEnabled_ || row < 0 || engine_->duration() <= 0.0 ||
+    if (!prefs_.resume || row < 0 || engine_->duration() <= 0.0 ||
         (s != PlaybackState::Playing && s != PlaybackState::Paused && s != PlaybackState::Ended)) {
         return;
     }
@@ -302,7 +308,7 @@ void MainWindow::onStateChanged(PlaybackState state) {
             break;
         case PlaybackState::Ended:
             recordResumePoint();  // finished: forget the resume point
-            playNext(false);
+            if (prefs_.autoplayNext || playlist_.repeat() == Playlist::Repeat::One) playNext(false);
             break;
         case PlaybackState::Error:
             // Skip unplayable entries, but never loop forever over a list of broken files.
@@ -326,7 +332,9 @@ void MainWindow::togglePlayPause() {
     }
 }
 
-void MainWindow::seekBy(double seconds) { engine_->seek(engine_->position() + seconds, SeekMode::Exact); }
+void MainWindow::seekBy(double seconds) {
+    engine_->seek(engine_->position() + seconds, prefs_.exactSeek ? SeekMode::Exact : SeekMode::Keyframe);
+}
 
 void MainWindow::changeVolumeBy(int delta) {
     const int v = std::clamp(engine_->volume() + delta, 0, 100);
@@ -452,7 +460,7 @@ void MainWindow::takeScreenshot(bool withSubtitles) {
 }
 
 void MainWindow::setAlwaysOnTop(bool on) {
-    onTop_ = on;
+    prefs_.onTop = on;
     platform::setAlwaysOnTop(static_cast<quintptr>(winId()), on);
     action(QStringLiteral("video.onTop"))->setChecked(on);
 }
@@ -533,13 +541,13 @@ void MainWindow::showShortcutDialog() {
 }
 
 void MainWindow::showSubtitleStyleDialog() {
-    SubtitleStyleDialog dialog(subtitleStyle_, this);
+    SubtitleStyleDialog dialog(prefs_.subtitles, this);
     connect(&dialog, &SubtitleStyleDialog::styleChanged, engine_.get(), &IPlaybackEngine::setSubtitleStyle);
     if (dialog.exec() == QDialog::Accepted) {
-        subtitleStyle_ = dialog.subtitleStyle();
+        prefs_.subtitles = dialog.subtitleStyle();
         saveSettings();
     }
-    engine_->setSubtitleStyle(subtitleStyle_);  // re-apply: undoes the live preview if cancelled
+    engine_->setSubtitleStyle(prefs_.subtitles);  // re-apply: undoes the live preview if cancelled
 }
 
 // ------------------------------------------------------------------ engine -> UI
@@ -554,7 +562,7 @@ void MainWindow::updatePosition(double seconds) {
 
 void MainWindow::updateDuration(double seconds) {
     seekSlider_->setRange(0, toMilliseconds(seconds));
-    seekSlider_->setPageStep(toMilliseconds(5.0));
+    seekSlider_->setPageStep(toMilliseconds(prefs_.seekShort));
     updateTimeLabel();
 }
 
@@ -619,84 +627,261 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     QMainWindow::closeEvent(event);
 }
 
+// ------------------------------------------------------------------ settings, profiles, bookmarks
+
+void MainWindow::applyPrefs() {
+    engine_->setVolume(prefs_.volume);
+    engine_->setMuted(prefs_.muted);
+    engine_->setAudioChannels(prefs_.audioChannels);
+    for (QAction* a : channelsMenu_->actions()) a->setChecked(a->data().toString() == prefs_.audioChannels);
+    engine_->setSubtitleStyle(prefs_.subtitles);
+    engine_->applySettings(prefs_.engine);
+    action(QStringLiteral("playback.resume"))->setChecked(prefs_.resume);
+    setAlwaysOnTop(prefs_.onTop);
+    const auto secs = [](double v) { return QString::number(v, 'g', 4); };
+    action(QStringLiteral("playback.seekForward"))->setText(tr("Seek &Forward %1 s").arg(secs(prefs_.seekShort)));
+    action(QStringLiteral("playback.seekBackward"))->setText(tr("Seek &Backward %1 s").arg(secs(prefs_.seekShort)));
+    action(QStringLiteral("playback.seekForwardLong"))->setText(tr("Seek Forward %1 s").arg(secs(prefs_.seekLong)));
+    action(QStringLiteral("playback.seekBackwardLong"))->setText(tr("Seek Backward %1 s").arg(secs(prefs_.seekLong)));
+    seekSlider_->setPageStep(toMilliseconds(prefs_.seekShort));
+}
+
+void MainWindow::applySettingsFromDialog(const PlayerSettings& settings) {
+    prefs_ = settings;
+    prefs_.volume = engine_->volume();  // the dialog does not edit what is playing right now
+    prefs_.muted = engine_->isMuted();
+    applyPrefs();
+    saveSettings();
+}
+
+void MainWindow::showSettingsDialog() {
+    prefs_.volume = engine_->volume();
+    prefs_.muted = engine_->isMuted();
+    SettingsDialog dialog(prefs_, this);
+    connect(&dialog, &SettingsDialog::applied, this, &MainWindow::applySettingsFromDialog);
+    connect(&dialog, &SettingsDialog::editShortcutsRequested, this, &MainWindow::showShortcutDialog);
+    connect(&dialog, &SettingsDialog::showDiagnosticsRequested, this, &MainWindow::showDiagnostics);
+    connect(&dialog, &SettingsDialog::openLogFolderRequested, this,
+            [this] { QDesktopServices::openUrl(QUrl::fromLocalFile(dataDir_ + QStringLiteral("/logs"))); });
+    connect(&dialog, &SettingsDialog::exportRequested, this, &MainWindow::exportSettings);
+    connect(&dialog, &SettingsDialog::importRequested, this, [this, &dialog] {
+        if (importSettings()) dialog.setSettings(prefs_);
+    });
+    dialog.exec();
+}
+
+void MainWindow::showDiagnostics() {
+    if (diagnostics_ == nullptr) diagnostics_ = new DiagnosticsDialog(*engine_, this);
+    diagnostics_->show();
+    diagnostics_->raise();
+    diagnostics_->activateWindow();
+}
+
+namespace {
+// Settings-file groups that are preferences (exported/imported). Recent files, the playlist and
+// window state stay private to this machine.
+bool portableKey(const QString& key) {
+    static const QStringList groups{QStringLiteral("engine"),   QStringLiteral("subtitles"), QStringLiteral("audio"),
+                                    QStringLiteral("playback"), QStringLiteral("window"),    QStringLiteral("shortcuts"),
+                                    QStringLiteral("profiles")};
+    return groups.contains(key.section(QLatin1Char('/'), 0, 0));
+}
+}  // namespace
+
+void MainWindow::exportSettings() {
+    const QString path = QFileDialog::getSaveFileName(this, tr("Export Settings"),
+                                                      QDir::homePath() + QStringLiteral("/Y-Player settings.ini"),
+                                                      tr("Settings (*.ini)"));
+    if (path.isEmpty()) return;
+    saveSettings();
+    QSettings out(path, QSettings::IniFormat);
+    out.clear();
+    for (const QString& key : store_.allKeys()) {
+        if (portableKey(key)) out.setValue(key, store_.value(key));
+    }
+    out.sync();
+    if (out.status() == QSettings::NoError) {
+        notify(tr("Settings exported"));
+    } else {
+        showError(tr("Cannot write %1").arg(QDir::toNativeSeparators(path)));
+    }
+}
+
+bool MainWindow::importSettings() {
+    const QString path =
+        QFileDialog::getOpenFileName(this, tr("Import Settings"), QDir::homePath(), tr("Settings (*.ini)"));
+    if (path.isEmpty()) return false;
+    QSettings in(path, QSettings::IniFormat);
+    if (in.status() != QSettings::NoError || in.allKeys().isEmpty()) {
+        showError(tr("\"%1\" is not a Y-Player settings file").arg(QDir::toNativeSeparators(path)));
+        return false;
+    }
+    for (const QString& key : in.allKeys()) {
+        if (portableKey(key)) store_.setValue(key, in.value(key));  // validated by loadPlayerSettings below
+    }
+    store_.sync();
+    prefs_ = loadPlayerSettings(store_);
+    shortcuts_.resetAll();
+    shortcuts_.applyOverrides(store_.value(QStringLiteral("shortcuts/overrides")).toMap());
+    applyShortcuts();
+    applyPrefs();
+    notify(tr("Settings imported"));
+    return true;
+}
+
+QList<NamedProfile> MainWindow::userProfiles() {
+    QList<NamedProfile> profiles;
+    store_.beginGroup(QStringLiteral("profiles"));
+    for (const QString& group : store_.childGroups()) {
+        store_.beginGroup(group);
+        profiles.append({QUrl::fromPercentEncoding(group.toUtf8()), loadEngineSettings(store_)});
+        store_.endGroup();
+    }
+    store_.endGroup();
+    return profiles;
+}
+
+void MainWindow::applyProfile(const QString& name, const EngineSettings& settings) {
+    prefs_.engine = settings;
+    engine_->applySettings(prefs_.engine);
+    saveSettings();
+    notify(tr("Profile: %1").arg(name));
+}
+
+void MainWindow::fillProfilesMenu(QMenu* menu) {
+    menu->clear();
+    auto* group = new QActionGroup(menu);
+    const auto addProfile = [&](const NamedProfile& p) {
+        QAction* a = menu->addAction(p.name, this, [this, p] { applyProfile(p.name, p.settings); });
+        a->setCheckable(true);
+        a->setChecked(p.settings == prefs_.engine);
+        group->addAction(a);
+    };
+    for (const NamedProfile& p : builtInProfiles()) addProfile(p);
+    const QList<NamedProfile> mine = userProfiles();
+    if (!mine.isEmpty()) menu->addSeparator();
+    for (const NamedProfile& p : mine) addProfile(p);
+    menu->addSeparator();
+    menu->addAction(tr("Save Current Settings as Profile..."), this, [this] {
+        bool ok = false;
+        const QString name =
+            QInputDialog::getText(this, tr("Save Profile"), tr("Profile name:"), QLineEdit::Normal, QString(), &ok)
+                .trimmed();
+        if (!ok || name.isEmpty()) return;
+        // Percent-encoded so any name is a valid settings group (no '/' or '\' surprises).
+        store_.beginGroup(QStringLiteral("profiles/") + QString::fromUtf8(QUrl::toPercentEncoding(name)));
+        saveEngineSettings(store_, prefs_.engine);
+        store_.endGroup();
+        store_.sync();
+        notify(tr("Profile \"%1\" saved").arg(name));
+    });
+    if (!mine.isEmpty()) {
+        QMenu* remove = menu->addMenu(tr("Delete Profile"));
+        for (const NamedProfile& p : mine) {
+            remove->addAction(p.name, this, [this, name = p.name] {
+                store_.remove(QStringLiteral("profiles/") + QString::fromUtf8(QUrl::toPercentEncoding(name)));
+                store_.sync();
+            });
+        }
+    }
+}
+
+void MainWindow::addBookmark() {
+    const int row = playlist_.current();
+    if (row < 0 || engine_->state() == PlaybackState::Idle || engine_->state() == PlaybackState::Error) {
+        notify(tr("Open a file first"));
+        return;
+    }
+    const double t = engine_->position();
+    bookmarks_.add(playlist_.at(row), t, formatTime(t, engine_->duration()));
+    saveSettings();
+    notify(tr("Bookmark added at %1").arg(formatTime(t, engine_->duration())));
+}
+
+void MainWindow::fillBookmarksMenu(QMenu* menu) {
+    menu->clear();
+    menu->addAction(action(QStringLiteral("playback.bookmarkAdd")));
+    menu->addSeparator();
+    const int row = playlist_.current();
+    const QList<Bookmark> list = row >= 0 ? bookmarks_.list(playlist_.at(row)) : QList<Bookmark>{};
+    if (list.isEmpty()) {
+        menu->addAction(tr("(no bookmarks for this file)"))->setEnabled(false);
+        return;
+    }
+    for (const Bookmark& b : list) {
+        menu->addAction(b.name, this, [this, t = b.time] { engine_->seek(t, SeekMode::Exact); });
+    }
+    menu->addSeparator();
+    const QString path = playlist_.at(row);
+    QMenu* remove = menu->addMenu(tr("Delete Bookmark"));
+    for (int i = 0; i < list.size(); ++i) {
+        remove->addAction(list.at(i).name, this, [this, path, i] {
+            bookmarks_.remove(path, i);
+            saveSettings();
+        });
+    }
+    menu->addAction(tr("Delete All Bookmarks for This File"), this, [this, path] {
+        bookmarks_.clear(path);
+        saveSettings();
+    });
+}
+
 // ------------------------------------------------------------------ persistence
 
 void MainWindow::loadSettings() {
-    engine_->setVolume(settings_.value(QStringLiteral("audio/volume"), 100).toInt());
-    engine_->setMuted(settings_.value(QStringLiteral("audio/muted"), false).toBool());
-    audioChannels_ = settings_.value(QStringLiteral("audio/channels"), QStringLiteral("auto")).toString();
-    engine_->setAudioChannels(audioChannels_);
-    for (QAction* a : channelsMenu_->actions()) a->setChecked(a->data().toString() == audioChannels_);
+    prefs_ = loadPlayerSettings(store_);
+    if (!persistent_) prefs_.resume = false;  // benchmark mode
+    applyPrefs();
 
-    resumeEnabled_ = settings_.value(QStringLiteral("playback/resume"), true).toBool();
-    action(QStringLiteral("playback.resume"))->setChecked(resumeEnabled_);
-    playlist_.setRepeat(static_cast<Playlist::Repeat>(std::clamp(settings_.value(QStringLiteral("playback/repeat"), 0).toInt(), 0, 2)));
+    playlist_.setRepeat(
+        static_cast<Playlist::Repeat>(std::clamp(store_.value(QStringLiteral("playback/repeat"), 0).toInt(), 0, 2)));
     for (QAction* a : repeatMenu_->actions()) {
         if (a->data().isValid()) a->setChecked(a->data().toInt() == static_cast<int>(playlist_.repeat()));
     }
-    const bool shuffle = settings_.value(QStringLiteral("playback/shuffle"), false).toBool();
+    const bool shuffle = store_.value(QStringLiteral("playback/shuffle"), false).toBool();
     playlist_.setShuffle(shuffle);
     action(QStringLiteral("playback.shuffle"))->setChecked(shuffle);
 
-    recent_.setItems(settings_.value(QStringLiteral("recent/files")).toStringList());
+    recent_.setItems(store_.value(QStringLiteral("recent/files")).toStringList());
 
-    settings_.beginGroup(QStringLiteral("subtitles"));
-    const SubtitleStyle d;
-    subtitleStyle_.font = settings_.value(QStringLiteral("font"), d.font).toString();
-    subtitleStyle_.size = settings_.value(QStringLiteral("size"), d.size).toInt();
-    subtitleStyle_.color = settings_.value(QStringLiteral("color"), d.color).toString();
-    subtitleStyle_.outlineColor = settings_.value(QStringLiteral("outlineColor"), d.outlineColor).toString();
-    subtitleStyle_.outlineSize = settings_.value(QStringLiteral("outlineSize"), d.outlineSize).toDouble();
-    subtitleStyle_.position = settings_.value(QStringLiteral("position"), d.position).toInt();
-    subtitleStyle_.overrideStyled = settings_.value(QStringLiteral("overrideStyled"), d.overrideStyled).toBool();
-    settings_.endGroup();
-    engine_->setSubtitleStyle(subtitleStyle_);
-
-    if (const int skipped = shortcuts_.applyOverrides(settings_.value(QStringLiteral("shortcuts/overrides")).toMap()); skipped > 0) {
+    if (const int skipped = shortcuts_.applyOverrides(store_.value(QStringLiteral("shortcuts/overrides")).toMap());
+        skipped > 0) {
         showError(tr("%n saved shortcut(s) conflicted or were unknown and were reset.", "", skipped));
     }
     applyShortcuts();
 
-    if (settings_.value(QStringLiteral("window/onTop"), false).toBool()) setAlwaysOnTop(true);
-
     QFile resume(dataDir_ + QStringLiteral("/resume.json"));
     if (resume.open(QIODevice::ReadOnly)) resume_.loadJson(resume.readAll());
+    QFile marks(dataDir_ + QStringLiteral("/bookmarks.json"));
+    if (marks.open(QIODevice::ReadOnly)) bookmarks_.loadJson(marks.readAll());
 
     playlistio::ParseResult session;
-    if (playlistio::load(dataDir_ + QStringLiteral("/session.m3u8"), session)) {
+    if (prefs_.restoreSession && playlistio::load(dataDir_ + QStringLiteral("/session.m3u8"), session)) {
         model_->insertPaths(-1, session.paths);
-        model_->setCurrent(settings_.value(QStringLiteral("playlist/current"), -1).toInt());
+        model_->setCurrent(store_.value(QStringLiteral("playlist/current"), -1).toInt());
     }
 }
 
 void MainWindow::saveSettings() {
     if (!persistent_) return;
-    settings_.setValue(QStringLiteral("audio/volume"), engine_->volume());
-    settings_.setValue(QStringLiteral("audio/muted"), engine_->isMuted());
-    settings_.setValue(QStringLiteral("audio/channels"), audioChannels_);
-    settings_.setValue(QStringLiteral("playback/resume"), resumeEnabled_);
-    settings_.setValue(QStringLiteral("playback/repeat"), static_cast<int>(playlist_.repeat()));
-    settings_.setValue(QStringLiteral("playback/shuffle"), playlist_.shuffle());
-    settings_.setValue(QStringLiteral("recent/files"), recent_.items());
-    settings_.beginGroup(QStringLiteral("subtitles"));
-    settings_.setValue(QStringLiteral("font"), subtitleStyle_.font);
-    settings_.setValue(QStringLiteral("size"), subtitleStyle_.size);
-    settings_.setValue(QStringLiteral("color"), subtitleStyle_.color);
-    settings_.setValue(QStringLiteral("outlineColor"), subtitleStyle_.outlineColor);
-    settings_.setValue(QStringLiteral("outlineSize"), subtitleStyle_.outlineSize);
-    settings_.setValue(QStringLiteral("position"), subtitleStyle_.position);
-    settings_.setValue(QStringLiteral("overrideStyled"), subtitleStyle_.overrideStyled);
-    settings_.endGroup();
-    settings_.setValue(QStringLiteral("shortcuts/overrides"), shortcuts_.overrides());
-    settings_.setValue(QStringLiteral("window/onTop"), onTop_);
-    settings_.setValue(QStringLiteral("playlist/current"), playlist_.current());
-    settings_.sync();
+    prefs_.volume = engine_->volume();
+    prefs_.muted = engine_->isMuted();
+    savePlayerSettings(store_, prefs_);
+    store_.setValue(QStringLiteral("playback/repeat"), static_cast<int>(playlist_.repeat()));
+    store_.setValue(QStringLiteral("playback/shuffle"), playlist_.shuffle());
+    store_.setValue(QStringLiteral("recent/files"), recent_.items());
+    store_.setValue(QStringLiteral("shortcuts/overrides"), shortcuts_.overrides());
+    store_.setValue(QStringLiteral("playlist/current"), playlist_.current());
+    store_.sync();
 
-    QSaveFile resume(dataDir_ + QStringLiteral("/resume.json"));
-    if (resume.open(QIODevice::WriteOnly)) {
-        resume.write(resume_.toJson());
-        resume.commit();
-    }
+    const auto writeFile = [this](const QString& name, const QByteArray& contents) {
+        QSaveFile f(dataDir_ + QLatin1Char('/') + name);
+        if (!f.open(QIODevice::WriteOnly) || f.write(contents) < 0 || !f.commit()) {
+            qWarning("could not save %s", qPrintable(name));
+        }
+    };
+    writeFile(QStringLiteral("resume.json"), resume_.toJson());
+    writeFile(QStringLiteral("bookmarks.json"), bookmarks_.toJson());
     QString error;
     if (!playlistio::save(dataDir_ + QStringLiteral("/session.m3u8"), playlist_.items(), &error)) {
         qWarning("could not save the session playlist: %s", qPrintable(error));

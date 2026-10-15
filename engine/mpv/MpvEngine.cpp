@@ -3,8 +3,11 @@
 #include "core/Adjustments.h"
 #include "core/TimeFormat.h"
 
+#include <QCoreApplication>
+#include <QDir>
 #include <QFileInfo>
 #include <QLoggingCategory>
+#include <QSaveFile>
 #include <QVariant>
 
 #include <mpv/client.h>
@@ -328,13 +331,146 @@ void MpvEngine::setRotation(int degrees) {
 }
 
 void MpvEngine::setFlip(bool horizontal, bool vertical) {
-    if (!ready() || (horizontal == flipH_ && vertical == flipV_)) return;
     flipH_ = horizontal;
     flipV_ = vertical;
-    QByteArrayList filters;
-    if (horizontal) filters << "hflip";
-    if (vertical) filters << "vflip";
-    setString("vf", filters.join(','));  // we own the whole filter chain
+    rebuildVideoFilters();
+}
+
+void MpvEngine::rebuildVideoFilters() {
+    const QString chain = videoFilterChain(flipH_, flipV_, denoise_);
+    if (!ready() || chain == vfChain_) return;  // rebuilding the chain re-inits filters: only on change
+    vfChain_ = chain;
+    setString("vf", chain.toUtf8());  // we own the whole filter chain
+}
+
+QString MpvEngine::sharpenShaderPath() {
+    if (!shaderPath_.isEmpty()) return shaderPath_;
+    // Unsharp mask on luma; strength comes from glsl-shader-opts so changing it needs no reload.
+    static constexpr char kShader[] = R"(//!PARAM strength
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+0.5
+
+//!HOOK LUMA
+//!BIND HOOKED
+//!DESC Y-Player sharpen
+vec4 hook() {
+    vec4 c = HOOKED_texOff(vec2(0.0, 0.0));
+    vec4 blur = (HOOKED_texOff(vec2(1.0, 0.0)) + HOOKED_texOff(vec2(-1.0, 0.0)) +
+                 HOOKED_texOff(vec2(0.0, 1.0)) + HOOKED_texOff(vec2(0.0, -1.0))) * 0.25;
+    return clamp(c + (c - blur) * strength, 0.0, 1.0);
+}
+)";
+    const QString path = QDir::temp().filePath(QStringLiteral("y-player-sharpen.glsl"));
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly) || file.write(kShader) < 0 || !file.commit()) {
+        qCWarning(lcMpv).noquote() << "cannot write the sharpen shader to" << path;
+        return {};
+    }
+    shaderPath_ = path;
+    return shaderPath_;
+}
+
+void MpvEngine::applySettings(const EngineSettings& s) {
+    if (!ready()) return;
+    const bool all = !applied_.has_value();
+    const EngineSettings old = applied_.value_or(EngineSettings{});
+    const auto changed = [&](auto member) { return all || s.*member != old.*member; };
+    const auto yesNo = [](bool on) { return on ? QByteArray("yes") : QByteArray("no"); };
+
+    if (changed(&EngineSettings::hwdec)) {
+        setString("hwdec", s.hwdec == QLatin1String("auto") ? QByteArray("auto-safe") : s.hwdec.toUtf8());
+    }
+    if (changed(&EngineSettings::scaler)) setString("scale", s.scaler.toUtf8());
+    if (changed(&EngineSettings::toneMapping)) setString("tone-mapping", s.toneMapping.toUtf8());
+    if (changed(&EngineSettings::hdrComputePeak)) setString("hdr-compute-peak", yesNo(s.hdrComputePeak));
+    if (changed(&EngineSettings::hdrPassthrough)) setString("target-colorspace-hint", yesNo(s.hdrPassthrough));
+    if (changed(&EngineSettings::smoothMotion)) {
+        setString("video-sync", s.smoothMotion ? "display-resample" : "audio");
+        setString("interpolation", yesNo(s.smoothMotion));
+    }
+    if (changed(&EngineSettings::brightness)) setString("brightness", QByteArray::number(s.brightness));
+    if (changed(&EngineSettings::contrast)) setString("contrast", QByteArray::number(s.contrast));
+    if (changed(&EngineSettings::saturation)) setString("saturation", QByteArray::number(s.saturation));
+    if (changed(&EngineSettings::gamma)) setString("gamma", QByteArray::number(s.gamma));
+    if (changed(&EngineSettings::hue)) setString("hue", QByteArray::number(s.hue));
+    if (changed(&EngineSettings::deinterlace)) setString("deinterlace", s.deinterlace.toUtf8());
+
+    if (changed(&EngineSettings::sharpen)) {
+        const bool wasOn = !all && old.sharpen > 0;
+        const QString shader = s.sharpen > 0 ? sharpenShaderPath() : QString();
+        if ((s.sharpen > 0) != wasOn || all) setString("glsl-shaders", shader.toUtf8());
+        if (s.sharpen > 0) setString("glsl-shader-opts", "strength=" + QByteArray::number(s.sharpen / 50.0, 'f', 2));
+    }
+    denoise_ = s.denoise;
+    rebuildVideoFilters();
+
+    if (const QString af = audioFilterChain(s); all || af != afChain_) {
+        afChain_ = af;
+        setString("af", af.toUtf8());
+    }
+    if (changed(&EngineSettings::normalizeDownmix)) setString("audio-normalize-downmix", yesNo(s.normalizeDownmix));
+    if (changed(&EngineSettings::audioLanguages)) setString("alang", s.audioLanguages.toUtf8());
+    if (changed(&EngineSettings::subtitleLanguages)) setString("slang", s.subtitleLanguages.toUtf8());
+    if (changed(&EngineSettings::subtitleAutoLoad)) setString("sub-auto", s.subtitleAutoLoad.toUtf8());
+    if (changed(&EngineSettings::cacheMb)) setString("demuxer-max-bytes", QByteArray::number(s.cacheMb) + "MiB");
+    if (changed(&EngineSettings::decoderThreads)) setString("vd-lavc-threads", QByteArray::number(s.decoderThreads));
+    if (changed(&EngineSettings::logLevel)) mpv_request_log_messages(mpv_, s.logLevel.toUtf8().constData());
+    applied_ = s;
+}
+
+QList<std::pair<QString, QString>> MpvEngine::diagnostics() const {
+    struct Row {
+        const char* label;
+        const char* property;
+    };
+    static constexpr Row kRows[] = {
+        {QT_TRANSLATE_NOOP("Diagnostics", "File"), "path"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Container"), "file-format"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Video codec"), "video-codec"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Hardware decoder"), "hwdec-current"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Video output"), "current-vo"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "GPU context"), "current-gpu-context"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Width"), "video-params/w"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Height"), "video-params/h"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Pixel format"), "video-params/pixelformat"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Hardware surface format"), "video-params/hw-pixelformat"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Color matrix"), "video-params/colormatrix"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Primaries (source)"), "video-params/primaries"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Transfer (source)"), "video-params/gamma"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Primaries (output)"), "video-target-params/primaries"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Transfer (output)"), "video-target-params/gamma"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Container FPS"), "container-fps"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Measured FPS"), "estimated-vf-fps"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Display FPS"), "display-fps"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Video bitrate"), "video-bitrate"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Audio codec"), "audio-codec"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Sample rate"), "audio-params/samplerate"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Channels"), "audio-params/channels"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Sample format"), "audio-params/format"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Audio output"), "current-ao"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Audio device"), "audio-device"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Audio bitrate"), "audio-bitrate"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Dropped frames (output)"), "frame-drop-count"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Dropped frames (decoder)"), "decoder-frame-drop-count"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Delayed frames"), "vo-delayed-frame-count"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "A/V offset (s)"), "avsync"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Buffered ahead (s)"), "demuxer-cache-duration"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Upscaler"), "scale"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Tone mapping"), "tone-mapping"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Video filters"), "vf"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Audio filters"), "af"},
+        {QT_TRANSLATE_NOOP("Diagnostics", "Shaders"), "glsl-shaders"},
+    };
+    QList<std::pair<QString, QString>> rows;
+    for (const Row& r : kRows) {
+        char* value = ready() ? mpv_get_property_osd_string(mpv_, r.property) : nullptr;
+        const QString text = value != nullptr && *value != '\0' ? QString::fromUtf8(value) : QStringLiteral("—");
+        mpv_free(value);
+        rows.append({QCoreApplication::translate("Diagnostics", r.label), text});
+    }
+    return rows;
 }
 
 void MpvEngine::seekChapter(int index) {

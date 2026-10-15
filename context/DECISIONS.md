@@ -247,3 +247,43 @@ Phase 6's settings window will edit the same keys, so no migration is needed.
 **Context:** `QWidget::setWindowFlags` (for `WindowStaysOnTopHint`, `FramelessWindowHint`) recreates the top-level native window, and with it the native video child window that libmpv presents into.
 
 **Decision:** Always-on-top uses `SetWindowPos(HWND_TOPMOST)`. Borderless removes `WS_CAPTION` with `SetWindowLongPtr`, keeping the resizable frame (`platform/win/WindowStyle`). In borderless mode a drag on the video moves the window (`QWindow::startSystemMove` after the drag distance, so double-click still toggles fullscreen). Leaving fullscreen re-applies borderless, because Qt restores the caption.
+
+---
+
+## ADR-016 — Settings model: one validated struct, applied to the engine as a diff
+
+**Status:** Accepted (Phase 6)
+
+**Decision:**
+- `core/EngineSettings` holds everything the backend applies: hardware decoding, scaler, HDR, smooth motion, picture, filters, equalizer, normalization, languages, cache, threads, log level. It uses backend-neutral values.
+- `core/PlayerSettings` adds UI preferences: resume, session restore, autoplay, seek steps, exact seek, always-on-top, subtitle style, channels, volume.
+- **Loading validates:** unknown choices fall back to defaults, numbers are clamped, language lists are restricted to letters, and colours must be `#RRGGBB`. So a hand-edited or imported file can never push arbitrary strings into mpv options.
+- `IPlaybackEngine::applySettings()` sends only what changed since the last call. Filter chains (`vf`, `af`, shaders) are only rebuilt when their resulting string changes, so an unrelated change causes no playback glitch.
+
+**Filter costs, shown in the UI next to each option:**
+- **No measurable cost:** picture controls (renderer).
+- **Small GPU cost:** sharpen (a luma unsharp-mask shader, written to `%TEMP%` and tuned through `glsl-shader-opts`, so strength changes don't reload it).
+- **GPU cost per frame or refresh:** EWA scaler, smooth motion.
+- **CPU filter:** denoise (`hqdn3d`), which forces a GPU→CPU copy per frame with hardware decoding. Flip is also a CPU filter; flip and denoise share one `vf` chain.
+- **Negligible CPU:** equalizer (10 × FFmpeg `equalizer`) and `dynaudnorm`.
+
+**Profiles:**
+- Built-in profiles are Balanced, High quality and Power saver.
+- User profiles are stored as `profiles/<percent-encoded name>/…` in `settings.ini`.
+- A profile is an `EngineSettings` snapshot.
+
+**Export/import:**
+- Exported: only portable groups (engine, subtitles, audio, playback, window, shortcuts, profiles).
+- Never exported: recent files, the playlist, resume points.
+
+**Bookmarks:** stored in `bookmarks.json`, per file.
+
+---
+
+## ADR-017 — File associations: per-user "Open with", the user picks the default
+
+**Status:** Accepted (Phase 6)
+
+**Decision:**
+- Under `HKCU\Software\Classes`, register the ProgID `YPlayer.Media` (open command and icon), and add `.ext\OpenWithProgids\YPlayer.Media` for each checked type. No admin rights are needed. Unchecking removes the entry, and the ProgID is removed with the last one.
+- Windows 10/11 block programs from setting themselves as the default (UserChoice is hash-protected), so the page offers a button that opens Settings › Default apps instead of trying to bypass that.
