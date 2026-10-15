@@ -1,5 +1,7 @@
 #include "ui/MainWindow.h"
 
+#include "ui/Icons.h"
+
 #include "core/PlaylistIO.h"
 #include "core/TimeFormat.h"
 #include "platform/win/WindowStyle.h"
@@ -127,7 +129,7 @@ MainWindow::MainWindow(std::unique_ptr<IPlaybackEngine> engine, QString aboutTex
     connect(engine_.get(), &IPlaybackEngine::mutedChanged, this, [this](bool muted) {
         QAction* mute = action(QStringLiteral("audio.mute"));
         mute->setChecked(muted);
-        mute->setIcon(style()->standardIcon(muted ? QStyle::SP_MediaVolumeMuted : QStyle::SP_MediaVolume));
+        mute->setIcon(glyphIcon(muted ? Glyph::Mute : Glyph::Volume));
     });
 
     // winId() creates the native window now, so mpv can attach before the first show.
@@ -281,7 +283,7 @@ void MainWindow::onStateChanged(PlaybackState state) {
     const bool playing = state == PlaybackState::Playing;
     QAction* toggle = action(QStringLiteral("playback.toggle"));
     toggle->setText(playing ? tr("&Pause") : tr("&Play"));
-    toggle->setIcon(style()->standardIcon(playing ? QStyle::SP_MediaPause : QStyle::SP_MediaPlay));
+    toggle->setIcon(glyphIcon(playing ? Glyph::Pause : Glyph::Play));
     action(QStringLiteral("playback.stop"))->setEnabled(state != PlaybackState::Idle && state != PlaybackState::Error);
     seekSlider_->setEnabled(state == PlaybackState::Playing || state == PlaybackState::Paused ||
                             state == PlaybackState::Ended);

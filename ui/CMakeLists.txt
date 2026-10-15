@@ -1,4 +1,5 @@
 add_library(yp_ui STATIC
+  Icons.cpp Icons.h
   MainWindow.cpp MainWindowMenus.cpp MainWindow.h
   PlaylistModel.cpp PlaylistModel.h
   PlaylistPanel.cpp PlaylistPanel.h

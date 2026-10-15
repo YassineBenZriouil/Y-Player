@@ -12,6 +12,7 @@ public:
     explicit VideoWidget(QWidget* parent = nullptr);
 
     [[nodiscard]] QPaintEngine* paintEngine() const override { return nullptr; }
+
     // Borderless windows have no title bar; let a left-drag on the video move the window.
     void setDragMovesWindow(bool on) { dragMovesWindow_ = on; }
 

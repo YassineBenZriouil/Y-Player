@@ -2,6 +2,8 @@
 
 #include "ui/MainWindow.h"
 
+#include "ui/Icons.h"
+
 #include "core/TimeFormat.h"
 #include "ui/PlaylistPanel.h"
 
@@ -124,12 +126,12 @@ void MainWindow::buildActions() {
         addAction(a);  // stays active while the menu bar is hidden in fullscreen
         actions_.insert(def.id, a);
     }
-    action(QStringLiteral("playback.stop"))->setIcon(style()->standardIcon(QStyle::SP_MediaStop));
-    action(QStringLiteral("playback.previous"))->setIcon(style()->standardIcon(QStyle::SP_MediaSkipBackward));
-    action(QStringLiteral("playback.next"))->setIcon(style()->standardIcon(QStyle::SP_MediaSkipForward));
-    action(QStringLiteral("audio.mute"))->setIcon(style()->standardIcon(QStyle::SP_MediaVolume));
-    action(QStringLiteral("video.fullscreen"))->setIcon(style()->standardIcon(QStyle::SP_TitleBarMaxButton));
-    action(QStringLiteral("view.playlist"))->setIcon(style()->standardIcon(QStyle::SP_FileDialogListView));
+    action(QStringLiteral("playback.stop"))->setIcon(glyphIcon(Glyph::Stop));
+    action(QStringLiteral("playback.previous"))->setIcon(glyphIcon(Glyph::Previous));
+    action(QStringLiteral("playback.next"))->setIcon(glyphIcon(Glyph::Next));
+    action(QStringLiteral("audio.mute"))->setIcon(glyphIcon(Glyph::Volume));
+    action(QStringLiteral("video.fullscreen"))->setIcon(glyphIcon(Glyph::Fullscreen));
+    action(QStringLiteral("view.playlist"))->setIcon(glyphIcon(Glyph::Playlist));
     action(QStringLiteral("video.flipH"))->setToolTip(tr("Runs on the CPU: with hardware decoding it adds a GPU-to-CPU copy per frame"));
     action(QStringLiteral("video.flipV"))->setToolTip(action(QStringLiteral("video.flipH"))->toolTip());
     applyShortcuts();
