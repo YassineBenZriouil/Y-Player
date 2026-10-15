@@ -61,6 +61,8 @@ private:
 
     QCheckBox* resume_ = nullptr;
     QCheckBox* onTop_ = nullptr;
+    QComboBox* theme_ = nullptr;
+    QComboBox* language_ = nullptr;
     QDoubleSpinBox* seekShort_ = nullptr;
     QDoubleSpinBox* seekLong_ = nullptr;
     QCheckBox* exactSeek_ = nullptr;

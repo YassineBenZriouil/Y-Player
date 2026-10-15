@@ -15,11 +15,15 @@ public:
 
 Q_SIGNALS:
     void seekRequested(int milliseconds, bool exact);
+    void hovered(int milliseconds, const QPoint& globalPos);  // time under the mouse (not dragging)
+    void hoverEnded();
 
 protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void leaveEvent(QEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
 
 private:
     [[nodiscard]] int valueAt(const QPointF& pos) const;

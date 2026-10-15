@@ -10,8 +10,8 @@ The full phase plan lives in [`PHASES.md`](PHASES.md). This file tracks status.
 | 3 | Benchmark harness & baseline | ⚠️ **Skipped partway** (2026-10-11): harness built, baseline **not** recorded |
 | 4 | Pipeline optimization | ⚠️ **Skipped** (2026-10-11): not started |
 | 5 | Core playback features | ✅ Done (2026-10-11), with one unverifiable criterion, see below |
-| 6 | Advanced features & settings | 🧪 Implemented (2026-10-15), **awaiting owner testing** |
-| 7 | UI/UX & identity | — |
+| 6 | Advanced features & settings | ✅ Done (2026-10-15, owner-tested) |
+| 7 | UI/UX & identity | 🧪 Implemented (2026-10-15), **awaiting owner testing** |
 | 8 | Hardening & reliability | — |
 | 9 | Packaging & release | — |
 
@@ -40,7 +40,47 @@ The owner stopped the Phase 3 baseline run and moved straight to Phase 5. That d
 - PotPlayer defaults on the same clip: about 285 % of one core (software decoding).
 - Y-Player startup varied from 154 ms to 2189 ms between cold and warm starts. Phase 4 should investigate.
 
-## Phase 6: implemented, not yet tested
+## Phase 7: implemented, not yet tested
+
+Nothing was run by the implementer. It compiles cleanly (`/W4 /WX` and the clang-tidy CI preset).
+
+**What to check:**
+
+1. **Identity:**
+   - The teal "Y" icon shows on the exe in Explorer, the taskbar, Alt+Tab and the title bar.
+   - About shows the version, a description and the licence.
+   - The UI uses Segoe UI Variable on Windows 11.
+2. **Themes** (Settings › General › Theme):
+   - Dark and Light both look consistent: menus, dialogs, playlist, sliders in teal.
+   - "Follow Windows" switches live when you change Windows' app mode, and the control icons recolour too.
+3. **High contrast:** turn on a Windows contrast theme and restart. The player should use the system's high-contrast colours, not the brand palette.
+4. **Fullscreen controls:**
+   - In fullscreen, moving the mouse shows the control bar at the bottom over the video. It hides after 2.5 s together with the cursor.
+   - It stays visible while hovered or while dragging the seek bar.
+   - Shortcuts (Space, arrows, Esc) still work after clicking a button in that bar.
+   - Leaving fullscreen puts the bar back under the video.
+5. **Seek preview:** hovering the seek bar shows a tooltip with the time, plus the chapter name on `tests/media/multitrack.mkv`.
+6. **On-screen messages:** light text with a dark outline, readable on bright and dark frames.
+7. **Window position:**
+   - Size and position are restored after a restart, on the same monitor.
+   - With that monitor unplugged, the window should come back on a visible screen.
+   - It works at 100/150/200 % display scaling.
+8. **French** (Settings › General › Language › Français, then restart): menus, dialogs, settings, on-screen messages and the playlist all appear in French. "Follow Windows" picks French on a French Windows.
+
+**Accessibility checklist** (the exit criterion; use Narrator with Ctrl+Win+Enter and a keyboard only):
+- [ ] Tab reaches every control-bar button, the seek bar and the volume slider, with a visible focus ring.
+- [ ] Seek bar: Left/Right seek, Home/End jump to the ends. Volume: arrow keys.
+- [ ] Narrator reads names: "Play", "Seek", "Volume", "Position", "Video", "Status", every menu item, settings fields, the playlist.
+- [ ] Every menu is reachable with Alt plus the underlined letter, and every action has a keyboard shortcut (Ctrl+K lists them).
+- [ ] Dialogs (Settings, Shortcuts, Subtitle style, Diagnostics) work with Tab, Space and Enter, and Esc closes them.
+- [ ] High contrast: see check 3.
+
+**Exit criteria status:**
+- [ ] UI stays responsive (input lag under 50 ms) during 4K playback. For the owner to test.
+- [ ] Accessibility checklist passes. For the owner to test.
+- [x] No PotPlayer assets or branding. The icon is drawn by `scripts/make_icon.py`, and the icons come from the Windows icon font.
+
+## Phase 6: implemented (owner-tested)
 
 From now on the owner does all testing; nothing in Phase 6 was run by the implementer. It compiles cleanly (`/W4 /WX` and the clang-tidy CI preset), and that is all that has been verified.
 

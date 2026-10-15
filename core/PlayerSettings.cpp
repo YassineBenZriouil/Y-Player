@@ -133,6 +133,8 @@ void savePlayerSettings(QSettings& s, const PlayerSettings& p) {
     s.setValue(QStringLiteral("playback/seekLong"), p.seekLong);
     s.setValue(QStringLiteral("playback/exactSeek"), p.exactSeek);
     s.setValue(QStringLiteral("window/onTop"), p.onTop);
+    s.setValue(QStringLiteral("general/theme"), p.theme);
+    s.setValue(QStringLiteral("general/language"), p.language);
 }
 
 PlayerSettings loadPlayerSettings(QSettings& s) {
@@ -165,6 +167,10 @@ PlayerSettings loadPlayerSettings(QSettings& s) {
     p.seekLong = clampedDouble(s, QStringLiteral("playback/seekLong"), d.seekLong, 1.0, 3600.0);
     p.exactSeek = s.value(QStringLiteral("playback/exactSeek"), d.exactSeek).toBool();
     p.onTop = s.value(QStringLiteral("window/onTop"), d.onTop).toBool();
+    p.theme = choice(s, QStringLiteral("general/theme"), d.theme,
+                     {QStringLiteral("system"), QStringLiteral("dark"), QStringLiteral("light")});
+    p.language = choice(s, QStringLiteral("general/language"), d.language,
+                        {QStringLiteral("system"), QStringLiteral("en"), QStringLiteral("fr")});
     return p;
 }
 

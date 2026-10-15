@@ -23,4 +23,10 @@ void setBorderless(quintptr hwnd, bool on) {
     SetWindowPos(h, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+bool highContrastEnabled() {
+    HIGHCONTRASTW hc{};
+    hc.cbSize = sizeof hc;
+    return SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof hc, &hc, 0) != 0 && (hc.dwFlags & HCF_HIGHCONTRASTON) != 0;
+}
+
 }  // namespace yp::platform

@@ -12,6 +12,7 @@ VideoWidget::VideoWidget(QWidget* parent) : QWidget(parent) {
     setAttribute(Qt::WA_PaintOnScreen);
     setAttribute(Qt::WA_NoSystemBackground);
     setMinimumSize(160, 90);
+    setMouseTracking(true);
 }
 
 void VideoWidget::mouseDoubleClickEvent(QMouseEvent* event) {
@@ -25,6 +26,7 @@ void VideoWidget::mousePressEvent(QMouseEvent* event) {
 }
 
 void VideoWidget::mouseMoveEvent(QMouseEvent* event) {
+    Q_EMIT mouseMoved();
     // Start the move only once the mouse really drags, so double-click still works.
     const bool dragged = pressPos_.x() >= 0 && (event->buttons() & Qt::LeftButton) &&
                          (event->position().toPoint() - pressPos_).manhattanLength() >= QApplication::startDragDistance();

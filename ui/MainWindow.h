@@ -13,6 +13,7 @@
 #include <QMainWindow>
 #include <QSettings>
 #include <QString>
+#include <QTimer>
 
 #include <functional>
 #include <memory>
@@ -22,6 +23,7 @@ class QLabel;
 class QMenu;
 class QSlider;
 class QToolButton;
+class QVBoxLayout;
 
 namespace yp::ui {
 
@@ -121,6 +123,11 @@ private:
 
     // MainWindow.cpp: settings, profiles, bookmarks (Phase 6)
     void applyPrefs();
+    void applyCurrentTheme();
+    void refreshIcons();
+    void showFullscreenControls();
+    void hideFullscreenControls();
+    void showSeekPreview(int milliseconds, const QPoint& globalPos);
     void applySettingsFromDialog(const PlayerSettings& settings);
     void showSettingsDialog();
     void showDiagnostics();
@@ -168,6 +175,10 @@ private:
     bool wasMaximized_ = false;
     QString lastDirectory_;
 
+    QString appliedTheme_;
+    QVBoxLayout* centralLayout_ = nullptr;
+    QWidget* overlay_ = nullptr;
+    QTimer hideControlsTimer_;
     VideoWidget* video_ = nullptr;
     QWidget* controls_ = nullptr;
     QToolButton* playPauseButton_ = nullptr;

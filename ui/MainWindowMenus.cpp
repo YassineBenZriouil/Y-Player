@@ -129,12 +129,7 @@ void MainWindow::buildActions() {
         addAction(a);  // stays active while the menu bar is hidden in fullscreen
         actions_.insert(def.id, a);
     }
-    action(QStringLiteral("playback.stop"))->setIcon(glyphIcon(Glyph::Stop));
-    action(QStringLiteral("playback.previous"))->setIcon(glyphIcon(Glyph::Previous));
-    action(QStringLiteral("playback.next"))->setIcon(glyphIcon(Glyph::Next));
-    action(QStringLiteral("audio.mute"))->setIcon(glyphIcon(Glyph::Volume));
-    action(QStringLiteral("video.fullscreen"))->setIcon(glyphIcon(Glyph::Fullscreen));
-    action(QStringLiteral("view.playlist"))->setIcon(glyphIcon(Glyph::Playlist));
+    refreshIcons();
     action(QStringLiteral("video.flipH"))->setToolTip(tr("Runs on the CPU: with hardware decoding it adds a GPU-to-CPU copy per frame"));
     action(QStringLiteral("video.flipV"))->setToolTip(action(QStringLiteral("video.flipH"))->toolTip());
     applyShortcuts();

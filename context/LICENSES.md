@@ -10,6 +10,8 @@ Status: Phase 0 assessment. Check this again before every release (Phase 9).
 | **FFmpeg** (statically inside libmpv-2.dll) | bundled with the libmpv build | GPL (build uses `--enable-gpl` components) | Indirect, through libmpv | Same as above; list its configure flags in the release notices |
 | **Qt 6** (Core, Gui, Widgets; Test for tests only) | 6.9.3 | LGPL-3.0 (open-source edition) | Dynamic link | Ship Qt as replaceable DLLs, include the license text, and provide or offer the Qt source |
 | **MSVC runtime** | VS 2026 Build Tools (14.51) | Microsoft redistributable license | Redistributable DLLs | Ship the VC++ redist or app-local DLLs as Microsoft allows |
+| **Qt Linguist tools** (lupdate/lrelease, `qttools`, dev tool only) | 6.9.3 | GPL-3.0 tools | Build-time translation compiler; **not shipped** (only the generated .qm data is) | None for the product |
+| **Segoe UI Variable / Segoe Fluent Icons / Segoe MDL2 Assets** | system fonts | Microsoft, part of Windows | Used at runtime from the OS; **not bundled** | Don't redistribute the font files |
 | **LLVM / clang-tidy** (dev tool only) | 23.1.3 | Apache-2.0 with LLVM exception | Static analysis in CI; **not shipped** | None for the product |
 | **FFmpeg CLI** (dev tool only) | BtbN master build | GPL | Generates test media; **not shipped** | None for the product |
 

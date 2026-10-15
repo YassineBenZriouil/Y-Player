@@ -9,5 +9,7 @@ namespace yp::platform {
 void setAlwaysOnTop(quintptr hwnd, bool on);
 // Removes the caption (title bar) but keeps the resizable frame.
 void setBorderless(quintptr hwnd, bool on);
+// Windows "High contrast" / "Contrast themes" accessibility setting.
+bool highContrastEnabled();
 
 }  // namespace yp::platform

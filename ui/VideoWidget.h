@@ -19,6 +19,7 @@ public:
 Q_SIGNALS:
     void doubleClicked();
     void contextMenuRequested(const QPoint& globalPos);
+    void mouseMoved();  // any movement, buttons or not (fullscreen auto-hide)
 
 protected:
     void mouseDoubleClickEvent(QMouseEvent* event) override;

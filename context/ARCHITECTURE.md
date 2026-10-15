@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 5. Each section says what exists today and what the module is for. Update this file whenever a boundary moves.
+Status: Phase 7. Each section says what exists today and what the module is for. Update this file whenever a boundary moves.
 
 ## Modules and dependencies
 
@@ -107,6 +107,13 @@ All window shortcuts are `QAction`s added to the window itself, so they keep wor
 - **Bookmarks:** `core/Bookmarks`.
 - **Diagnostics panel:** `ui/DiagnosticsDialog` polls `IPlaybackEngine::diagnostics()` twice a second, only while it is visible.
 - **File associations:** `platform/win/FileAssociations`.
+
+## Look and language (Phase 7, ADR-018/019)
+
+- **Theme:** `ui/Theme` applies the brand palette, or the system palette under high contrast. `MainWindow::applyCurrentTheme()` re-creates the glyph icons afterwards.
+- **Fullscreen controls:** a focus-less tool window (`overlay_`) that the control bar is reparented into.
+- **Translations:** `.qm` files are embedded at `:/i18n`, and `main.cpp` installs the `QTranslator` before any window is created.
+- **Icon:** the exe icon comes from `app/y-player.rc`; the window icon is `:/icons/y-player.png`.
 
 ## Planned modules (from `context/INIT.md` §4, added in their phases)
 

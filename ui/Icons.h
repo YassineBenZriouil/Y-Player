@@ -19,8 +19,7 @@ enum class Glyph : char16_t {
 
 // Icon drawn from the Windows icon font in the palette's text colours (normal + disabled), so it
 // stays visible in dark and light mode; Qt's built-in media icons are dark and vanish on dark.
-// shortcut: colours are fixed when the icon is made, so switching the Windows theme while the app
-// runs keeps the old colours until restart; move to a QIconEngine if live switching matters.
+// Colours are taken when the icon is made: MainWindow::refreshIcons() re-creates them after a theme change.
 QIcon glyphIcon(Glyph glyph);
 
 }  // namespace yp::ui

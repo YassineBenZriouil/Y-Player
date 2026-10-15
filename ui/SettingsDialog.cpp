@@ -87,6 +87,14 @@ SettingsDialog::SettingsDialog(PlayerSettings settings, QWidget* parent) : QDial
     addRow(general, tr("Resume playback"), resume_, tr("Remembers positions of files longer than one minute"));
     onTop_ = new QCheckBox(tr("Keep the player above other windows"), this);
     addRow(general, tr("Always on top"), onTop_);
+    theme_ = combo(this, {{QStringLiteral("system"), tr("Follow Windows")},
+                          {QStringLiteral("dark"), tr("Dark")},
+                          {QStringLiteral("light"), tr("Light")}});
+    addRow(general, tr("Theme"), theme_, tr("Windows high-contrast mode always takes precedence"));
+    language_ = combo(this, {{QStringLiteral("system"), tr("Follow Windows")},
+                             {QStringLiteral("en"), QStringLiteral("English")},
+                             {QStringLiteral("fr"), QStringLiteral("Français")}});
+    addRow(general, tr("Language"), language_, tr("Takes effect the next time Y-Player starts"));
     auto* transfer = new QWidget(this);
     auto* transferRow = new QHBoxLayout(transfer);
     transferRow->setContentsMargins(0, 0, 0, 0);
@@ -417,6 +425,8 @@ void SettingsDialog::setSettings(const PlayerSettings& s) {
     const EngineSettings& e = s.engine;
     resume_->setChecked(s.resume);
     onTop_->setChecked(s.onTop);
+    select(theme_, s.theme);
+    select(language_, s.language);
     seekShort_->setValue(s.seekShort);
     seekLong_->setValue(s.seekLong);
     exactSeek_->setChecked(s.exactSeek);
@@ -452,6 +462,8 @@ PlayerSettings SettingsDialog::collect() const {
     EngineSettings& e = s.engine;
     s.resume = resume_->isChecked();
     s.onTop = onTop_->isChecked();
+    s.theme = selected(theme_);
+    s.language = selected(language_);
     s.seekShort = seekShort_->value();
     s.seekLong = seekLong_->value();
     s.exactSeek = exactSeek_->isChecked();

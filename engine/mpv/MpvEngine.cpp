@@ -101,6 +101,10 @@ constexpr std::pair<const char*, const char*> kOptions[] = {
     {"audio-client-name", "Y-Player"},
     {"screenshot-format", "png"},
     {"osd-font", "Segoe UI"},
+    {"osd-font-size", "30"},  // brand OSD (ADR-018): light text, dark outline, readable on any frame
+    {"osd-color", "#E6E8EC"},
+    {"osd-border-color", "#0E0F12"},
+    {"osd-border-size", "2"},
 };
 
 constexpr double kPositionStep = 0.1;  // seconds; throttles positionChanged during playback

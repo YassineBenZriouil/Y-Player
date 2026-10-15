@@ -23,6 +23,8 @@ struct PlayerSettings {
     double seekShort = 5.0;   // seconds, arrow keys
     double seekLong = 30.0;   // seconds, Shift+arrow keys
     bool exactSeek = true;    // false: snap to keyframes (faster on long-GOP files)
+    QString theme = QStringLiteral("system");     // system | dark | light
+    QString language = QStringLiteral("system");  // system | en | fr (applied at start)
 
     bool operator==(const PlayerSettings&) const = default;
 };

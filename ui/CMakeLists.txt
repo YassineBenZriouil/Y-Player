@@ -9,6 +9,7 @@ add_library(yp_ui STATIC
   ShortcutDialog.cpp ShortcutDialog.h
   ShortcutMap.cpp ShortcutMap.h
   SubtitleStyleDialog.cpp SubtitleStyleDialog.h
+  Theme.cpp Theme.h
   VideoWidget.cpp VideoWidget.h)
 target_link_libraries(yp_ui PUBLIC Qt6::Widgets yp_core PRIVATE yp_platform_win)
 yp_target_defaults(yp_ui)

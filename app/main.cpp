@@ -8,6 +8,10 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
+#include <QIcon>
+#include <QLocale>
+#include <QSettings>
+#include <QTranslator>
 #include <QLoggingCategory>
 #include <QStandardPaths>
 #include <QTimer>
@@ -35,6 +39,7 @@ int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("Y-Player"));
     QApplication::setApplicationVersion(QStringLiteral(YP_VERSION));
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/y-player.png")));
 #ifdef NDEBUG
     QLoggingCategory::setFilterRules(QStringLiteral("yp.*.debug=false"));  // QT_LOGGING_RULES still overrides
 #endif
@@ -67,9 +72,24 @@ int main(int argc, char* argv[]) {
         qCCritical(lcApp).noquote() << "libmpv API mismatch: loaded" << yp::mpv::loadedApiVersion();
     }
 
-    const QString about = QStringLiteral("<b>Y-Player %1</b><br>Qt %2<br>libmpv client API %3")
-                              .arg(QStringLiteral(YP_VERSION), QString::fromLatin1(qVersion()),
-                                   yp::mpv::loadedApiVersion());
+    // Interface language (Settings > General); "system" follows Windows. Untranslated strings
+    // fall back to English. Read before any window exists so every string is translated.
+    QTranslator translator;
+    {
+        const QSettings stored(dataDir + QStringLiteral("/settings.ini"), QSettings::IniFormat);
+        const QString language = stored.value(QStringLiteral("general/language"), QStringLiteral("system")).toString();
+        const QLocale locale = language == QLatin1String("system") ? QLocale::system() : QLocale(language);
+        if (translator.load(locale, QStringLiteral("yplayer"), QStringLiteral("_"), QStringLiteral(":/i18n"))) {
+            QApplication::installTranslator(&translator);
+        }
+    }
+
+    const QString about =
+        QApplication::translate("About",
+                                "<h3>Y-Player %1</h3><p>A fast, hardware-accelerated video player for Windows.</p>"
+                                "<p>Built with Qt %2 and libmpv (client API %3).<br>"
+                                "Licensed under the GNU GPL, version 3 or later.</p>")
+            .arg(QStringLiteral(YP_VERSION), QString::fromLatin1(qVersion()), yp::mpv::loadedApiVersion());
     yp::ui::MainWindow window(std::make_unique<yp::mpv::MpvEngine>(), about, dataDir);
     // Created before show() so the bench sees the window's first expose (startup time).
     yp::app::BenchRun* bench = nullptr;

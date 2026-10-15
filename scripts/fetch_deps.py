@@ -19,7 +19,7 @@ DEPS = ROOT / "deps"
 QT_VERSION = "6.9.3"
 QT_ARCH = "win64_msvc2022_64"
 QT_DIR = DEPS / "qt" / QT_VERSION / "msvc2022_64"
-QT_ARCHIVES = ["qtbase"]  # Core/Gui/Widgets/Test/OpenGL + windeployqt; add modules here when needed
+QT_ARCHIVES = ["qtbase", "qttools"]  # qtbase: Core/Gui/Widgets/Test + windeployqt; qttools: lupdate/lrelease
 QT_STAMP = DEPS / "qt" / ".complete"
 AQT_PIN = "aqtinstall==3.3.0"
 # download.qt.io drops TLS connections under parallel load; serialize and retry.

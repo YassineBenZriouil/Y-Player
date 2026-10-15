@@ -1,11 +1,11 @@
 #include "ui/MainWindow.h"
 
-#include "ui/Icons.h"
-
 #include "core/PlaylistIO.h"
 #include "core/TimeFormat.h"
 #include "platform/win/WindowStyle.h"
 #include "ui/DiagnosticsDialog.h"
+#include "ui/Icons.h"
+#include "ui/Theme.h"
 #include "ui/PlaylistModel.h"
 #include "ui/PlaylistPanel.h"
 #include "ui/SeekSlider.h"
@@ -15,6 +15,9 @@
 #include "ui/VideoWidget.h"
 
 #include <QAction>
+#include <QApplication>
+#include <QStyleHints>
+#include <QToolTip>
 #include <QActionGroup>
 #include <QCloseEvent>
 #include <QDesktopServices>
@@ -40,6 +43,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ranges>
 #include <utility>
 
 namespace yp::ui {
@@ -64,7 +68,9 @@ QToolButton* makeButton(QWidget* parent, QAction* action) {
     auto* button = new QToolButton(parent);
     button->setDefaultAction(action);
     button->setAutoRaise(true);
-    button->setFocusPolicy(Qt::NoFocus);  // Space/arrows always go to the window shortcuts
+    // Tab reaches it (keyboard users); a mouse click does not take focus, so Space/arrows keep
+    // driving the window shortcuts.
+    button->setFocusPolicy(Qt::TabFocus);
     return button;
 }
 
@@ -91,14 +97,26 @@ MainWindow::MainWindow(std::unique_ptr<IPlaybackEngine> engine, QString aboutTex
     buildActions();
 
     auto* central = new QWidget(this);
-    auto* layout = new QVBoxLayout(central);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
+    centralLayout_ = new QVBoxLayout(central);
+    centralLayout_->setContentsMargins(0, 0, 0, 0);
+    centralLayout_->setSpacing(0);
     video_ = new VideoWidget(central);
-    layout->addWidget(video_, 1);
+    video_->setAccessibleName(tr("Video"));
+    centralLayout_->addWidget(video_, 1);
     controls_ = buildControls();
-    layout->addWidget(controls_);
+    centralLayout_->addWidget(controls_);
     setCentralWidget(central);
+
+    // Fullscreen control bar: a separate top-level window can float over the native video
+    // window (a child widget cannot, ADR-003). It never takes focus, so shortcuts keep working.
+    overlay_ = new QWidget(this, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus);
+    overlay_->setAttribute(Qt::WA_ShowWithoutActivating);
+    overlay_->setAutoFillBackground(true);
+    auto* overlayLayout = new QVBoxLayout(overlay_);
+    overlayLayout->setContentsMargins(0, 0, 0, 0);
+    hideControlsTimer_.setSingleShot(true);
+    hideControlsTimer_.setInterval(2500);
+    connect(&hideControlsTimer_, &QTimer::timeout, this, &MainWindow::hideFullscreenControls);
 
     playlistPanel_ = new PlaylistPanel(*model_, this);
     addDockWidget(Qt::RightDockWidgetArea, playlistPanel_);
@@ -115,10 +133,15 @@ MainWindow::MainWindow(std::unique_ptr<IPlaybackEngine> engine, QString aboutTex
     buildMenus();
 
     infoLabel_ = new QLabel(tr("No file loaded"), this);
+    infoLabel_->setAccessibleName(tr("Status"));
     statusBar()->addWidget(infoLabel_, 1);
 
     connect(video_, &VideoWidget::doubleClicked, this, [this] { setFullscreen(!isFullScreen()); });
     connect(video_, &VideoWidget::contextMenuRequested, this, &MainWindow::showContextMenu);
+    connect(video_, &VideoWidget::mouseMoved, this, &MainWindow::showFullscreenControls);
+    connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, [this] {
+        if (prefs_.theme == QLatin1String("system")) applyCurrentTheme();
+    });
     connect(engine_.get(), &IPlaybackEngine::stateChanged, this, &MainWindow::onStateChanged);
     connect(engine_.get(), &IPlaybackEngine::positionChanged, this, &MainWindow::updatePosition);
     connect(engine_.get(), &IPlaybackEngine::durationChanged, this, &MainWindow::updateDuration);
@@ -168,6 +191,9 @@ QWidget* MainWindow::buildControls() {
 
     seekSlider_ = new SeekSlider(bar);
     seekSlider_->setAccessibleName(tr("Seek"));
+    seekSlider_->setAccessibleDescription(tr("Left and Right arrows seek, Home and End jump to the ends"));
+    connect(seekSlider_, &SeekSlider::hovered, this, &MainWindow::showSeekPreview);
+    connect(seekSlider_, &SeekSlider::hoverEnded, this, [] { QToolTip::hideText(); });
     connect(seekSlider_, &SeekSlider::seekRequested, this, [this](int ms, bool exact) {
         engine_->seek(ms / 1000.0, exact ? SeekMode::Exact : SeekMode::Keyframe);
         updateTimeLabel();
@@ -177,6 +203,7 @@ QWidget* MainWindow::buildControls() {
     timeLabel_ = new QLabel(bar);
     timeLabel_->setMinimumWidth(timeLabel_->fontMetrics().horizontalAdvance(QStringLiteral("00:00:00 / 00:00:00")));
     timeLabel_->setAlignment(Qt::AlignCenter);
+    timeLabel_->setAccessibleName(tr("Position"));
     row->addWidget(timeLabel_);
 
     row->addWidget(makeButton(bar, action(QStringLiteral("audio.mute"))));
@@ -184,7 +211,7 @@ QWidget* MainWindow::buildControls() {
     volumeSlider_->setRange(0, 100);
     volumeSlider_->setValue(engine_->volume());
     volumeSlider_->setFixedWidth(100);
-    volumeSlider_->setFocusPolicy(Qt::NoFocus);
+    volumeSlider_->setFocusPolicy(Qt::TabFocus);
     volumeSlider_->setAccessibleName(tr("Volume"));
     connect(volumeSlider_, &QSlider::valueChanged, this, [this](int v) { engine_->setVolume(v); });
     row->addWidget(volumeSlider_);
@@ -475,12 +502,19 @@ void MainWindow::setBorderless(bool on) {
 void MainWindow::setFullscreen(bool on) {
     if (on == isFullScreen()) return;
     menuBar()->setVisible(!on);
-    controls_->setVisible(!on);
     statusBar()->setVisible(!on);
     if (on) {
         wasMaximized_ = isMaximized();
         showFullScreen();
+        overlay_->layout()->addWidget(controls_);  // reparents into the floating bar
+        controls_->show();
+        showFullscreenControls();
     } else {
+        hideControlsTimer_.stop();
+        overlay_->hide();
+        video_->unsetCursor();
+        centralLayout_->addWidget(controls_);  // back under the video
+        controls_->show();
         if (wasMaximized_) {
             showMaximized();
         } else {
@@ -629,7 +663,61 @@ void MainWindow::closeEvent(QCloseEvent* event) {
 
 // ------------------------------------------------------------------ settings, profiles, bookmarks
 
+void MainWindow::applyCurrentTheme() {
+    applyTheme(*qobject_cast<QApplication*>(QCoreApplication::instance()), prefs_.theme);
+    appliedTheme_ = prefs_.theme;
+    refreshIcons();
+    overlay_->setPalette(palette());
+}
+
+void MainWindow::refreshIcons() {
+    // glyphIcon() bakes in the current palette colours, so re-create after every theme change.
+    action(QStringLiteral("playback.stop"))->setIcon(glyphIcon(Glyph::Stop));
+    action(QStringLiteral("playback.previous"))->setIcon(glyphIcon(Glyph::Previous));
+    action(QStringLiteral("playback.next"))->setIcon(glyphIcon(Glyph::Next));
+    action(QStringLiteral("video.fullscreen"))->setIcon(glyphIcon(Glyph::Fullscreen));
+    action(QStringLiteral("view.playlist"))->setIcon(glyphIcon(Glyph::Playlist));
+    action(QStringLiteral("audio.mute"))->setIcon(glyphIcon(engine_->isMuted() ? Glyph::Mute : Glyph::Volume));
+    action(QStringLiteral("playback.toggle"))
+        ->setIcon(glyphIcon(engine_->state() == PlaybackState::Playing ? Glyph::Pause : Glyph::Play));
+}
+
+void MainWindow::showFullscreenControls() {
+    if (!isFullScreen()) return;
+    const QRect screen = geometry();
+    const int h = controls_->sizeHint().height();
+    overlay_->setGeometry(screen.x(), screen.y() + screen.height() - h, screen.width(), h);
+    overlay_->show();
+    overlay_->raise();
+    video_->unsetCursor();
+    hideControlsTimer_.start();
+}
+
+void MainWindow::hideFullscreenControls() {
+    if (!isFullScreen()) return;
+    if (overlay_->underMouse() || seekSlider_->isDragging()) {  // still in use: check again later
+        hideControlsTimer_.start();
+        return;
+    }
+    overlay_->hide();
+    video_->setCursor(Qt::BlankCursor);
+}
+
+void MainWindow::showSeekPreview(int milliseconds, const QPoint& globalPos) {
+    const double t = milliseconds / 1000.0;
+    QString text = formatTime(t, engine_->duration());
+    const QList<Chapter> chapters = engine_->chapters();
+    for (const Chapter& c : chapters | std::views::reverse) {  // last chapter starting before t
+        if (c.time <= t) {
+            if (!c.title.isEmpty()) text += QStringLiteral("  ·  ") + c.title;
+            break;
+        }
+    }
+    QToolTip::showText(globalPos - QPoint(0, 40), text, seekSlider_);
+}
+
 void MainWindow::applyPrefs() {
+    if (prefs_.theme != appliedTheme_) applyCurrentTheme();
     engine_->setVolume(prefs_.volume);
     engine_->setMuted(prefs_.muted);
     engine_->setAudioChannels(prefs_.audioChannels);
@@ -647,6 +735,7 @@ void MainWindow::applyPrefs() {
 }
 
 void MainWindow::applySettingsFromDialog(const PlayerSettings& settings) {
+    if (settings.language != prefs_.language) notify(tr("Restart Y-Player to change the language"));
     prefs_ = settings;
     prefs_.volume = engine_->volume();  // the dialog does not edit what is playing right now
     prefs_.muted = engine_->isMuted();
@@ -681,7 +770,7 @@ namespace {
 // Settings-file groups that are preferences (exported/imported). Recent files, the playlist and
 // window state stay private to this machine.
 bool portableKey(const QString& key) {
-    static const QStringList groups{QStringLiteral("engine"),   QStringLiteral("subtitles"), QStringLiteral("audio"),
+    static const QStringList groups{QStringLiteral("general"), QStringLiteral("engine"),   QStringLiteral("subtitles"), QStringLiteral("audio"),
                                     QStringLiteral("playback"), QStringLiteral("window"),    QStringLiteral("shortcuts"),
                                     QStringLiteral("profiles")};
     return groups.contains(key.section(QLatin1Char('/'), 0, 0));
@@ -832,6 +921,7 @@ void MainWindow::loadSettings() {
     prefs_ = loadPlayerSettings(store_);
     if (!persistent_) prefs_.resume = false;  // benchmark mode
     applyPrefs();
+    restoreGeometry(store_.value(QStringLiteral("window/geometry")).toByteArray());  // Qt keeps it on a visible screen
 
     playlist_.setRepeat(
         static_cast<Playlist::Repeat>(std::clamp(store_.value(QStringLiteral("playback/repeat"), 0).toInt(), 0, 2)));
@@ -872,6 +962,7 @@ void MainWindow::saveSettings() {
     store_.setValue(QStringLiteral("recent/files"), recent_.items());
     store_.setValue(QStringLiteral("shortcuts/overrides"), shortcuts_.overrides());
     store_.setValue(QStringLiteral("playlist/current"), playlist_.current());
+    if (!isFullScreen()) store_.setValue(QStringLiteral("window/geometry"), saveGeometry());
     store_.sync();
 
     const auto writeFile = [this](const QString& name, const QByteArray& contents) {

@@ -1,0 +1,2 @@
+// Windows resources: the icon Explorer, the taskbar and Alt+Tab show for Y-Player.exe.
+IDI_ICON1 ICON "resources/y-player.ico"
