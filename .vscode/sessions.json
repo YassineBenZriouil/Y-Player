@@ -1,0 +1,30 @@
+{
+    "theme": "tribe",
+    "active": "default",
+    "activateOnStartup": true,
+    "keepExistingTerminals": false,
+    "sessions": {
+        "default": [
+            {
+                "name": "Claude",
+                "autoExecuteCommands": true,
+                "icon": "terminal",
+                "color": "terminal.ansiMagenta",
+                "commands": ["claude --dangerously-skip-permissions"]
+            },
+            {
+                "name": "Usage",
+                "autoExecuteCommands": true,
+                "icon": "terminal",
+                "color": "terminal.ansiRed",
+                "commands": ["claude /usage"]
+            }
+        ],
+        "saved-session": [
+            {
+                "name": "connect",
+                "commands": [""]
+            }
+        ]
+    }
+}
